@@ -1,7 +1,7 @@
 from typing import List, Dict, Tuple
 from src.importers.spss.lexer import SpssLexer
 from src.importers.spss.tokens import Token, TokenType
-from src.importers.spss.ast import AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AggregateNode, AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
 from src.ir.types import DataType
 
 class SpssParser:
@@ -42,6 +42,9 @@ class SpssParser:
             
             elif token.type == TokenType.TERMINATOR:
                 self.advance()
+
+            elif token.type == TokenType.COMMAND and "AGGREGATE" in token.value.upper():
+                nodes.append(self._parse_aggregate())                
             else:
                 nodes.append(self._parse_generic_command())
         
@@ -272,3 +275,52 @@ class SpssParser:
             
             # Otherwise, swallow the token (it's just data)
             self.advance()
+
+
+    def _parse_aggregate(self) -> AggregateNode:
+        self.advance() # Skip AGGREGATE
+        
+        outfile = ""
+        break_vars = []
+        aggregations = []
+        
+        while self.current_token().type != TokenType.TERMINATOR:
+            t = self.current_token()
+            
+            if t.type == TokenType.SUBCOMMAND:
+                sub_cmd = t.value.upper()
+                self.advance() # Consume subcommand
+                
+                # Check for equals (optional in some contexts but usually present)
+                if self.current_token().type == TokenType.EQUALS:
+                    self.advance()
+                
+                if sub_cmd == "/OUTFILE":
+                    outfile = self.current_token().value.strip("'").strip('"')
+                    self.advance()
+                    
+                elif sub_cmd == "/BREAK":
+                    # Capture all identifiers until next subcommand
+                    while self.current_token().type == TokenType.IDENTIFIER:
+                        break_vars.append(self.current_token().value)
+                        self.advance()
+                
+                else:
+                    # It's an aggregation formula (e.g. /mean_x = MEAN(x))
+                    # We capture the subcommand name (target var) plus the rest of the expression
+                    target = sub_cmd.replace("/", "")
+                    
+                    # Capture formula until next subcommand
+                    expr_parts = []
+                    while (self.current_token().type != TokenType.SUBCOMMAND and 
+                           self.current_token().type != TokenType.TERMINATOR):
+                        expr_parts.append(self.current_token().value)
+                        self.advance()
+                    
+                    full_expr = f"{target} = {' '.join(expr_parts)}"
+                    aggregations.append(full_expr)
+            else:
+                self.advance()
+                
+        self.advance() # Skip terminator
+        return AggregateNode(outfile=outfile, break_vars=break_vars, aggregations=aggregations)            

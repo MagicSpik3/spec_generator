@@ -1,11 +1,11 @@
-import networkx as nx
-from typing import List, Dict, Optional, Tuple, Set
 from pydantic import BaseModel, Field, model_validator
 from src.ir.types import DataType, OpType
+from typing import Dict, List, Tuple, Union, Any
+import networkx as nx
 
 class Dataset(BaseModel):
     id: str
-    source: str = "derived"
+    source: str
     columns: List[Tuple[str, DataType]] = Field(default_factory=list)
 
     @property
@@ -15,49 +15,47 @@ class Dataset(BaseModel):
 class Operation(BaseModel):
     id: str
     type: OpType
-    inputs: List[str] = Field(default_factory=list)
-    outputs: List[str] = Field(default_factory=list)
-    params: Dict[str, str] = Field(default_factory=dict)
+    inputs: List[str]
+    outputs: List[str]
+    # Allow complex params (Lists, Unions) for Aggregates/Joins
+    params: Dict[str, Union[str, int, float, bool, List[str]]] = Field(default_factory=dict)
 
 class Pipeline(BaseModel):
     datasets: List[Dataset]
     operations: List[Operation]
 
     @model_validator(mode='after')
-    def validate_integrity(self) -> 'Pipeline':
+    def validate_integrity(self):
         """
-        Validates the pipeline structure using NetworkX.
+        Validates the DAG structure using NetworkX.
+        Runs automatically on initialization.
         """
-        # 1. Build Registry for O(1) lookups
-        dataset_ids = {ds.id for ds in self.datasets}
-        
-        # 2. Build the Graph
-        # Nodes = Datasets
-        # Edges = Operations (Input -> Output)
         G = nx.DiGraph()
-        G.add_nodes_from(dataset_ids)
-
+        
+        # Create lookup for fast validation
+        ds_ids = set(d.id for d in self.datasets)
+        
+        # Add Nodes
+        for ds in self.datasets:
+            G.add_node(ds.id, type="dataset")
+        
         for op in self.operations:
-            # Check for unknown datasets
-            for inp in op.inputs:
-                if inp not in dataset_ids:
-                    raise ValueError(f"Operation '{op.id}' references unknown input Dataset '{inp}'")
-            for out in op.outputs:
-                if out not in dataset_ids:
-                    raise ValueError(f"Operation '{op.id}' references unknown output Dataset '{out}'")
+            G.add_node(op.id, type="operation")
             
-            # Add edges to the graph representing data flow
+            # Check inputs exist
             for inp in op.inputs:
-                for out in op.outputs:
-                    G.add_edge(inp, out, operation=op.id)
+                if inp not in ds_ids:
+                    raise ValueError(f"Operation {op.id} references unknown input Dataset '{inp}'")
+                G.add_edge(inp, op.id)
+            
+            # Check outputs exist
+            for out in op.outputs:
+                if out not in ds_ids:
+                    raise ValueError(f"Operation {op.id} references unknown output Dataset '{out}'")
+                G.add_edge(op.id, out)
 
-        # 3. Check for Cycles
         if not nx.is_directed_acyclic_graph(G):
-            # Find the cycle for a helpful error message
-            try:
-                cycle = nx.find_cycle(G, orientation='original')
-                raise ValueError(f"Cycle detected in pipeline logic: {cycle}")
-            except nx.NetworkXNoCycle:
-                pass # Should not happen given is_directed_acyclic_graph check
-
+            # cycle = nx.find_cycle(G) # Optional: detailed cycle info
+            raise ValueError("Pipeline Validation Failed: Cycle detected in graph")
+            
         return self

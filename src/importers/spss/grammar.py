@@ -13,13 +13,12 @@ SPSS_TOKENS = [
     (TokenType.STRING_LITERAL, re.compile(r"'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"", re.DOTALL)),
 
     # 3. Explicit Commands
-    # 🟢 Added BEGIN/END DATA to prevent data being parsed as code
     (TokenType.COMMAND, re.compile(r"BEGIN\s+DATA", re.IGNORECASE)), 
     (TokenType.COMMAND, re.compile(r"END\s+DATA", re.IGNORECASE)),
-    
     (TokenType.COMMAND, re.compile(r"SELECT\s+IF", re.IGNORECASE)),
     (TokenType.COMMAND, re.compile(r"MATCH\s+FILES", re.IGNORECASE)),
     (TokenType.COMMAND, re.compile(r"EXECUTE", re.IGNORECASE)),
+    (TokenType.COMMAND, re.compile(r"AGGREGATE", re.IGNORECASE)), 
 
     # 4. Subcommands
     (TokenType.SUBCOMMAND, re.compile(r"/[A-Za-z_]+")),
