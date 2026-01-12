@@ -1,7 +1,7 @@
 from typing import List, Dict, Tuple
 from src.importers.spss.lexer import SpssLexer
 from src.importers.spss.tokens import Token, TokenType
-from src.importers.spss.ast import AstNode, LoadNode, ComputeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
 from src.ir.types import DataType
 
 class SpssParser:
@@ -9,6 +9,8 @@ class SpssParser:
         self.lexer = SpssLexer()
         self.tokens: List[Token] = []
         self.pos = 0
+
+
 
     def parse(self, code: str) -> List[AstNode]:
         self.tokens = self.lexer.tokenize(code)
@@ -18,12 +20,26 @@ class SpssParser:
         while self.pos < len(self.tokens):
             token = self.current_token()
             
+            # Dispatch
             if token.value == "GET" and self.peek_token(1).value == "DATA":
                 nodes.append(self._parse_get_data())
             elif token.value == "COMPUTE":
                 nodes.append(self._parse_compute())
             elif token.value == "SAVE":
                 nodes.append(self._parse_save())
+            
+            # Semantic Commands
+            elif token.type == TokenType.COMMAND and "SELECT IF" in token.value.upper():
+                nodes.append(self._parse_select_if())
+            elif token.type == TokenType.COMMAND and "EXECUTE" in token.value.upper():
+                nodes.append(self._parse_execute())
+            elif token.type == TokenType.COMMAND and "MATCH FILES" in token.value.upper():
+                nodes.append(self._parse_match_files())
+                
+            # 🟢 New Handler for Inline Data
+            elif token.type == TokenType.COMMAND and "BEGIN DATA" in token.value.upper():
+                self._skip_data_block()
+            
             elif token.type == TokenType.TERMINATOR:
                 self.advance()
             else:
@@ -49,6 +65,24 @@ class SpssParser:
 
         return LoadNode(filename=filename, file_type=fmt, columns=columns)
     
+
+    def _parse_select_if(self) -> FilterNode:
+        self.advance() # Skip SELECT IF token
+        
+        condition = ""
+        while self.current_token().type != TokenType.TERMINATOR:
+            condition += self.current_token().value + " "
+            self.advance()
+        self.advance() # Skip dot
+        
+        return FilterNode(condition=condition.strip())
+
+    def _parse_execute(self) -> MaterializeNode:
+        self.advance() # Skip EXECUTE token
+        if self.current_token().type == TokenType.TERMINATOR:
+            self.advance() # Skip dot
+        return MaterializeNode()
+
     def _parse_compute(self) -> ComputeNode:
         # COMPUTE x = 1.
         self.advance() # Skip COMPUTE
@@ -134,6 +168,7 @@ class SpssParser:
         self.advance() # Consume terminator
         return params
 
+
     def _parse_variables_block(self, block_text: str) -> List[Tuple[str, DataType]]:
         block_tokens = self.lexer.tokenize(block_text + ".")
         columns = []
@@ -145,15 +180,22 @@ class SpssParser:
             if t_name.type == TokenType.IDENTIFIER:
                 col_type = DataType.UNKNOWN
                 type_val = t_type.value.upper()
-                if "F" in type_val or "NUM" in type_val: col_type = DataType.INTEGER
-                elif "A" in type_val or "STR" in type_val: col_type = DataType.STRING
-                elif "DATE" in type_val: col_type = DataType.DATE
+                
+                # 🟢 FIX: Prioritize DATE check over 'A' check to prevent false positives
+                # Also consider checking startswith for better accuracy
+                if "DATE" in type_val: 
+                    col_type = DataType.DATE
+                elif type_val.startswith("F") or "NUM" in type_val: 
+                    col_type = DataType.INTEGER
+                elif type_val.startswith("A") or "STR" in type_val: 
+                    col_type = DataType.STRING
                 
                 columns.append((t_name.value, col_type))
                 i += 2
             else:
                 i += 1
         return columns
+
 
     def current_token(self) -> Token:
         if self.pos >= len(self.tokens): return Token(TokenType.TERMINATOR, ".", -1, -1)
@@ -165,3 +207,68 @@ class SpssParser:
 
     def advance(self):
         self.pos += 1
+
+    def _parse_match_files(self) -> JoinNode:
+        self.advance() # Skip MATCH FILES
+        
+        sources = []
+        by_keys = []
+        
+        # Custom loop to handle repeating /FILE keys
+        while self.current_token().type != TokenType.TERMINATOR:
+            t = self.current_token()
+            
+            if t.type == TokenType.SUBCOMMAND:
+                sub_cmd = t.value.upper()
+                
+                if sub_cmd == "/FILE":
+                    # Expect '=' then value
+                    self.advance() # Skip /FILE
+                    if self.current_token().type == TokenType.EQUALS:
+                        self.advance() # Skip =
+                    
+                    val = self.current_token().value.strip("'").strip('"')
+                    sources.append(val)
+                    self.advance()
+                    
+                elif sub_cmd == "/BY":
+                    # Expect '=' (optional in some dialects, strictly usually yes) 
+                    # then list of identifiers
+                    self.advance() # Skip /BY
+                    if self.current_token().type == TokenType.EQUALS:
+                        self.advance()
+                    
+                    # Capture all identifiers until next subcommand or dot
+                    while self.current_token().type == TokenType.IDENTIFIER:
+                        by_keys.append(self.current_token().value)
+                        self.advance()
+                else:
+                    # Ignore other subcommands like /IN or /MAP for MVP
+                    self.advance()
+            else:
+                self.advance()
+                
+        self.advance() # Skip terminator
+        return JoinNode(sources=sources, by=by_keys)
+    
+
+    def _skip_data_block(self):
+        """
+        Consumes tokens until END DATA is found. 
+        """
+        self.advance() # Consume BEGIN DATA
+        
+        while self.pos < len(self.tokens):
+            token = self.current_token()
+            
+            # Check for the exit condition
+            if token.type == TokenType.COMMAND and "END DATA" in token.value.upper():
+                self.advance() # Consume END DATA
+                
+                # Consume optional trailing dot
+                if self.current_token().type == TokenType.TERMINATOR:
+                    self.advance()
+                return
+            
+            # Otherwise, swallow the token (it's just data)
+            self.advance()
