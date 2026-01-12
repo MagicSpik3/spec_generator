@@ -18,11 +18,16 @@ class TestSpssParser:
         nodes = self.parser.parse(code)
         
         assert len(nodes) == 3
+        
+        # Check Load
         assert isinstance(nodes[0], LoadNode)
         assert nodes[0].filename == "raw_data.csv"
         
+        # Check Compute (Updated for Split Logic)
         assert isinstance(nodes[1], ComputeNode)
-        assert "x = 1" in nodes[1].expression
+        assert nodes[1].target == "x"
+        assert nodes[1].expression == "1"
         
+        # Check Save
         assert isinstance(nodes[2], SaveNode)
         assert nodes[2].filename == "final.sav"
