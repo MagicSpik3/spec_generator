@@ -1,0 +1,12 @@
+# Core Logic
+pydantic>=2.5.0
+pyyaml>=6.0
+
+# Testing & Quality
+pytest>=8.0.0
+pytest-cov>=4.1.0
+coverage>=7.4.0
+
+# Optional: For nice graph visualization later
+networkx>=3.2.1
+matplotlib>=3.8.0
