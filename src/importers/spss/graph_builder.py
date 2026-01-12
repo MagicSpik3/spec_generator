@@ -1,6 +1,7 @@
 import hashlib
+from platform import node
 from typing import List, Optional, Tuple
-from src.importers.spss.ast import AstNode, LoadNode, ComputeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
 from src.ir.model import Pipeline, Dataset, Operation
 from src.ir.types import DataType, OpType
 
@@ -34,11 +35,19 @@ class GraphBuilder:
                 self._handle_load(node)
             elif isinstance(node, ComputeNode):
                 self._handle_compute(node)
+            elif isinstance(node, FilterNode): # 🟢 New
+                self._handle_filter(node)
+            elif isinstance(node, MaterializeNode): # 🟢 New
+                self._handle_materialize(node)
             elif isinstance(node, SaveNode):
                 self._handle_save(node)
             elif isinstance(node, GenericNode):
                 self._handle_generic(node)
-        
+            elif isinstance(node, JoinNode):
+                self._handle_join(node)
+
+
+
         return Pipeline(datasets=self.datasets, operations=self.operations)
 
     def _get_active_columns(self) -> List[Tuple[str, DataType]]:
@@ -131,3 +140,83 @@ class GraphBuilder:
             )
             self.operations.append(op)
             self.active_dataset_id = new_ds_id
+
+
+    def _handle_filter(self, node: FilterNode):
+        if not self.active_dataset_id: return
+
+        new_ds_id = self._get_next_ds_id("filtered")
+        # Filter keeps same schema
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("filter"),
+            type=OpType.FILTER,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            params={'condition': node.condition}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id
+
+    def _handle_materialize(self, node: MaterializeNode):
+        if not self.active_dataset_id: return
+
+        # EXECUTE is a barrier. It doesn't change schema, but forces evaluation.
+        # In our graph, we represent this as a checkpoint.
+        new_ds_id = self._get_next_ds_id("materialized")
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("exec"),
+            type=OpType.MATERIALIZE,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            params={}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id            
+
+
+    def _handle_join(self, node: JoinNode):
+        # 1. Resolve Inputs
+        input_ids = []
+        for src in node.sources:
+            if src == "*":
+                if self.active_dataset_id:
+                    input_ids.append(self.active_dataset_id)
+                else:
+                    # Edge case: * used with no active state
+                    pass 
+            else:
+                # Check if we already loaded this file? 
+                # For MVP, assume it refers to a file we need to treat as a source
+                # In a real compiler, we might look up 'ds_rates.sav' if it was loaded earlier.
+                # Here we create an implicit reference.
+                file_ds_id = f"source_{src}"
+                # If not exists, register it (Simple check)
+                if not any(d.id == file_ds_id for d in self.datasets):
+                     self.datasets.append(Dataset(id=file_ds_id, source="file"))
+                input_ids.append(file_ds_id)
+
+        # 2. Create Output Dataset
+        new_ds_id = self._get_next_ds_id("joined")
+        
+        # Schema Merging Strategy (Naive):
+        # Start with columns from the first input (Left Join logic usually)
+        # In reality, MATCH FILES is a full outer join of variables on the key.
+        # We will copy the active columns for now.
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("join"),
+            type=OpType.JOIN,
+            inputs=input_ids,
+            outputs=[new_ds_id],
+            params={'by': ", ".join(node.by)}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id

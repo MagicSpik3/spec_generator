@@ -6,7 +6,7 @@ class DataType(str, Enum):
     FLOAT = "float"
     DATE = "date"
     BOOLEAN = "boolean"
-    UNKNOWN = "unknown" # Used only during transitional parsing
+    UNKNOWN = "unknown"
 
 class OpType(str, Enum):
     LOAD = "load_csv"
@@ -16,5 +16,6 @@ class OpType(str, Enum):
     JOIN = "join"
     AGGREGATE = "aggregate"
     SORT = "sort"
-    # Fallback for complex SPSS commands like MATCH FILES /FILE=*
+    MATERIALIZE = "materialize" # 🟢 New
     GENERIC = "generic_transform"
+
