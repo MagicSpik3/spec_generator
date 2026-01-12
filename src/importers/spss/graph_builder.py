@@ -1,7 +1,7 @@
 import hashlib
 from platform import node
 from typing import List, Optional, Tuple
-from src.importers.spss.ast import AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AggregateNode, AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
 from src.ir.model import Pipeline, Dataset, Operation
 from src.ir.types import DataType, OpType
 
@@ -45,6 +45,8 @@ class GraphBuilder:
                 self._handle_generic(node)
             elif isinstance(node, JoinNode):
                 self._handle_join(node)
+            elif isinstance(node, AggregateNode):
+                self._handle_aggregate(node)
 
 
 
@@ -220,3 +222,41 @@ class GraphBuilder:
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id
+
+
+    def _handle_aggregate(self, node: AggregateNode):
+        if not self.active_dataset_id: return
+
+        # 1. Determine Output ID
+        # If output is '*', it replaces/updates the active stream.
+        # If output is 'file.sav', it branches off to a side dataset.
+        if node.outfile == "*" or node.outfile == "":
+             new_ds_id = self._get_next_ds_id("agg_active")
+             is_side_effect = False
+        else:
+             new_ds_id = f"source_{node.outfile}" # Register as a source for later matching
+             is_side_effect = True
+
+        # 2. Create Dataset
+        # Aggregation changes schema: starts with Break Vars + Agg Vars
+        # For MVP, we won't perfectly compute the schema, but we register the node.
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=[])
+        self.datasets.append(new_ds)
+
+        # 3. Create Operation
+        op = Operation(
+            id=self._get_next_op_id("aggregate"),
+            type=OpType.AGGREGATE,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            params={
+                'outfile': node.outfile,
+                'break': node.break_vars,
+                'aggregations': node.aggregations
+            }
+        )
+        self.operations.append(op)
+        
+        # 4. Update State ONLY if it's not a side-file
+        if not is_side_effect:
+            self.active_dataset_id = new_ds_id

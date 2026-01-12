@@ -39,3 +39,10 @@ class JoinNode(AstNode):
     """Represents MATCH FILES."""
     sources: List[str] = field(default_factory=list)
     by: List[str] = field(default_factory=list)    
+
+
+@dataclass
+class AggregateNode(AstNode):
+    outfile: str = ""
+    break_vars: List[str] = field(default_factory=list)
+    aggregations: List[str] = field(default_factory=list) # e.g. ["mean_x = MEAN(x)"]    
