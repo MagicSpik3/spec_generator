@@ -46,3 +46,8 @@ class AggregateNode(AstNode):
     outfile: str = ""
     break_vars: List[str] = field(default_factory=list)
     aggregations: List[str] = field(default_factory=list) # e.g. ["mean_x = MEAN(x)"]    
+
+
+@dataclass
+class DataListNode(AstNode):
+    columns: List[Tuple[str, DataType]] = field(default_factory=list)    
