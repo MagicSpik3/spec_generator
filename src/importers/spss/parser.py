@@ -1,4 +1,5 @@
 from typing import List
+from src.importers.spss.parsers.logic import LogicParserMixin
 from src.importers.spss.tokens import TokenType
 from src.importers.spss.ast import (
     AstNode, GenericNode, LoadNode, ComputeNode, 
@@ -8,7 +9,10 @@ from src.importers.spss.parsers.base import BaseParserMixin
 from src.importers.spss.parsers.schema import SchemaParserMixin
 from src.importers.spss.parsers.stats import StatsParserMixin
 
-class SpssParser(SchemaParserMixin, StatsParserMixin, BaseParserMixin):
+class SpssParser(SchemaParserMixin, 
+                 StatsParserMixin, 
+                 LogicParserMixin, 
+                 BaseParserMixin):
     
     def parse(self, code: str) -> List[AstNode]:
         self.tokens = self.lexer.tokenize(code)
@@ -44,6 +48,9 @@ class SpssParser(SchemaParserMixin, StatsParserMixin, BaseParserMixin):
             
             elif token.type == TokenType.TERMINATOR:
                 self.advance()
+            elif token.value.upper() == "RECODE":
+                nodes.append(self.parse_recode())
+
             else:
                 nodes.append(self._parse_generic_command())
         

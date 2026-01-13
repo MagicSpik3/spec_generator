@@ -1,7 +1,7 @@
 import hashlib
 from platform import node
 from typing import List, Optional, Tuple
-from src.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
 from src.ir.model import Pipeline, Dataset, Operation
 from src.ir.types import DataType, OpType
 
@@ -35,9 +35,9 @@ class GraphBuilder:
                 self._handle_load(node)
             elif isinstance(node, ComputeNode):
                 self._handle_compute(node)
-            elif isinstance(node, FilterNode): # 🟢 New
+            elif isinstance(node, FilterNode): 
                 self._handle_filter(node)
-            elif isinstance(node, MaterializeNode): # 🟢 New
+            elif isinstance(node, MaterializeNode): 
                 self._handle_materialize(node)
             elif isinstance(node, SaveNode):
                 self._handle_save(node)
@@ -49,6 +49,9 @@ class GraphBuilder:
                 self._handle_data_list(node)
             elif isinstance(node, AggregateNode):
                 self._handle_aggregate(node)
+            # 🟢 Dispatch Recode
+            elif isinstance(node, RecodeNode):
+                self._handle_recode(node)
 
         return Pipeline(datasets=self.datasets, operations=self.operations)
 
@@ -300,4 +303,38 @@ class GraphBuilder:
         self.operations.append(op)
         
         # Set as active
+        self.active_dataset_id = new_ds_id
+
+    def _handle_recode(self, node: RecodeNode):
+        # 1. Identify Input Dataset
+        input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
+        
+        # 2. Calculate New Schema
+        # Start with existing columns
+        new_cols = list(input_ds.columns) if input_ds else []
+        
+        # Add targets if they are new
+        existing_names = {c[0].upper() for c in new_cols}
+        
+        for target in node.target_vars:
+            if target.upper() not in existing_names:
+                # We inferred a new column!
+                # Note: RECODE usually produces the same type as source, or Numeric.
+                # For MVP, defaulting to UNKNOWN or INTEGER is safer than missing it.
+                new_cols.append((target, DataType.UNKNOWN)) 
+        
+        # 3. Create New Dataset State
+        new_ds_id = self._get_next_ds_id("recode")
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
+        self.datasets.append(new_ds)
+        
+        # 4. Create Operation
+        self.operations.append(Operation(
+            id=self._get_next_op_id("recode"),
+            type=OpType.COMPUTE, # or a new OpType.RECODE
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            params={'logic': node.map_logic}
+        ))
+        
         self.active_dataset_id = new_ds_id
