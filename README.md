@@ -2,7 +2,23 @@
 
 > **A semantic compiler that reverse-engineers legacy SPSS syntax into a platform-agnostic Intermediate Representation (IR).**
 
-`SpecGen` is not a transpiler; it is a **logic extractor**. It parses legacy scripts, builds a dependency graph of data transformations, and exports a clean YAML specification that can be used to generate SQL, R, or PySpark pipelines.
+SpecGen is not a simple transpiler. It is a **logic extractor**. It parses legacy scripts, builds a dependency graph of data transformations, tracks variable lineage through complex logic, and exports a clean specification that can be used to generate SQL, R, or PySpark pipelines.
+
+---
+
+## 📝 Executive Summary
+
+**SpecGen** solves the "Black Box" problem of legacy migration. Unlike line-by-line translation tools, SpecGen builds a **Dependency Graph** of the data lifecycle, ensuring that the business logic is understood before it is migrated.
+
+### Core Capabilities
+
+* **Semantic Schema Propagation:** The compiler tracks the existence and type of every variable at every step. It accurately predicts output columns (e.g., `TOTAL_PAID` from an `AGGREGATE`), even if those columns rely on variables created 20 steps earlier.
+* **Robust "Ghost Column" Detection:** Structural commands like `RECODE` are parsed to identify implicit variable creation (`RECODE x INTO y`). This prevents downstream failures where queries attempt to use variables that "don't exist" in the schema.
+* **Hybrid Parsing Strategy:**
+* **White Box:** Critical ETL commands (`AGGREGATE`, `JOIN`, `FILTER`, `COMPUTE`) are fully parsed into semantic logic.
+* **Gray Box:** Complex transformations (`RECODE`) are parsed for **Structure** (Inputs/Outputs) to maintain schema integrity, while preserving logic for manual review.
+
+
 
 ---
 
@@ -13,33 +29,33 @@ The project follows a strict **Compiler Frontend** architecture, designed to sep
 ```mermaid
 graph LR
     A[Raw SPSS File] -->|Lexer| B(Tokens)
-    B -->|Parser| C(Abstract Syntax Tree)
+    B -->|Mixin Parser| C(Abstract Syntax Tree)
     C -->|Graph Builder| D{Intermediate Representation}
     D -->|Exporter| E[YAML Artifact]
+    D -->|Visualizer| F[Mermaid Flowchart]
 
 ```
 
-### 1. The Ingestion Layer
+### 1. The Modular Parser (`src/importers/spss/parsers/`)
 
-* **Lexer (`src/importers/spss/lexer.py`):** A robust tokenizer that handles SPSS-specific quirks (e.g., trailing dots, case insensitivity) using strict Regex definitions.
-* **Parser (`src/importers/spss/parser.py`):** A recursive descent parser that converts tokens into a type-safe **Abstract Syntax Tree (AST)**.
-* *Feature:* **"Fugue State" Processing** — Automatically detects and ignores inline raw data blocks (`BEGIN DATA` ... `END DATA`) to prevent parser hallucinations.
-* *Feature:* **Semantic Capture** — Parses complex `AGGREGATE` and `MATCH FILES` commands into structured objects, not generic text.
+We moved away from a monolithic parser to a **Mixin-based Facade Pattern**:
 
+* `schema.py`: Handles `DATA LIST`, `GET DATA`, and variable definitions.
+* `stats.py`: Handles complex `AGGREGATE` logic and break variables.
+* `logic.py`: Handles `RECODE` and `COMPUTE` structure.
+* `base.py`: Shared token navigation and state management.
 
+### 2. The Semantic Graph Builder
 
-### 2. The Semantic Layer
+Converts the linear AST into a Directed Acyclic Graph (DAG).
 
-* **Graph Builder (`src/importers/spss/graph_builder.py`):** converts the linear AST into a Directed Acyclic Graph (DAG) of operations.
-* **Data Lineage:** Tracks dataset state across Joins, Filters, and Aggregations.
-* **Deterministic IDs:** Generates stable IDs for datasets and operations, ensuring consistent output across runs.
+* **State Accumulation:** It "remembers" the columns in the dataset at step  to validate step .
+* **Optimistic Typing:** Handles "Ghost Columns" created by generic transformations by inferring their existence to prevent pipeline breakage.
 
+### 3. The Validation Layer
 
-
-### 3. The Validation Layer (`src/ir`)
-
-* **Pydantic Models:** Enforces strict typing on the IR.
-* **Self-Healing:** Automatically detects cycles in the graph and validates that all inputs/outputs reference existing datasets.
+* **96% Test Coverage:** Validated against a 60-step complex ETL pipeline simulating real-world Benefit Data processing.
+* **Determinism:** Output IDs (`ds_001`, `op_058`) are stable and reproducible.
 
 ---
 
@@ -61,32 +77,62 @@ pip install -r requirements.txt
 
 ### Usage
 
-Run the compiler against any SPSS syntax file:
+**1. Generate the Specification (YAML):**
 
 ```bash
-PYTHONPATH=src:. python cli.py path/to/script.sps
+PYTHONPATH=src:. python cli.py inputs/my_script.sps
 
 ```
 
-This will generate a `pipeline_spec.yaml` in the output directory.
+*Outputs: `inputs/my_script.yaml*`
+
+**2. Generate the Data Flow Diagram (Mermaid):**
+
+```bash
+PYTHONPATH=src:. python cli.py inputs/my_script.sps --visualize
+
+```
+
+*Outputs: `inputs/my_script.md` (Viewable in GitHub or Mermaid Live)*
 
 ---
 
-## 🧪 Testing Strategy
+## 🔍 Example: The "Ghost Column" Problem
 
-This project maintains **96% Code Coverage** and employs a multi-tiered testing strategy:
+One of the hardest challenges in migration is when a variable is created implicitly and used later. SpecGen handles this automatically.
 
-1. **Unit Tests (`tests/unit`):** Isolate specific components (e.g., verifying `AGGREGATE` parsing handles lists correctly).
-2. **Integration Tests (`tests/integration`):** Validate the full pipeline lifecycle.
-* `test_advanced_scenarios.py`: The "Kitchen Sink" test that runs Load -> Compute -> Filter -> Aggregate -> Join -> Save.
+**Input SPSS:**
 
+```spss
+DATA LIST FREE / age (F3.0).
+* RECODE creates 'is_adult' implicitly!
+RECODE age (18 thru 100 = 1) (ELSE = 0) INTO is_adult.
+AGGREGATE
+  /OUTFILE=*
+  /BREAK=is_adult
+  /count = N.
 
-3. **Technical Debt Tracking (`test_pending_features.py`):** A suite of tests designed to *document* missing features. These tests assert that commands like `RECODE` are currently "Generic," serving as a reminder for future development.
+```
 
-**Run the full suite:**
+**Output YAML (IR):**
+SpecGen detects `is_adult` was created, registers it in the schema, and validates the Aggregation.
 
-```bash
-PYTHONPATH=src:. pytest --cov=src --cov-report=term-missing
+```yaml
+- id: op_002_recode
+  type: compute
+  inputs: [ds_001]
+  outputs: [ds_002_derived]
+  parameters:
+    targets: ['is_adult']  # <--- Captured!
+    logic: '( 18 thru 100 = 1 ) ( ELSE = 0 )'
+
+- id: op_003_aggregate
+  type: aggregate
+  inputs: [ds_002_derived]
+  outputs: [ds_003_agg_active]
+  parameters:
+    break: ['is_adult']    # <--- Validated against schema!
+    aggregations: ['count = N']
 
 ```
 
@@ -96,56 +142,38 @@ PYTHONPATH=src:. pytest --cov=src --cov-report=term-missing
 
 ```text
 src/
-├── importers/spss/      # The Compiler Frontend
-│   ├── grammar.py       # Regex definitions for Tokens
-│   ├── lexer.py         # Tokenizer logic
-│   ├── ast.py           # AST Node definitions (ComputeNode, AggregateNode, etc.)
-│   ├── parser.py        # Recursive Descent Parser
-│   └── graph_builder.py # Logic for transforming AST -> IR Graph
-├── ir/                  # Intermediate Representation
-│   ├── model.py         # Pydantic models (Pipeline, Operation, Dataset)
-│   └── types.py         # Enums (OpType, DataType)
-└── exporters/           # Backend Code Generators
-    └── yaml.py          # Serializes the IR to YAML
+├── importers/spss/
+│   ├── ast.py                # Node definitions
+│   ├── graph_builder.py      # Logic builder (The "Brain")
+│   ├── lexer.py              # Tokenizer
+│   ├── parser.py             # The Main Facade
+│   ├── parsers/              # Specialized Logic Modules
+│   │   ├── base.py
+│   │   ├── schema.py         # DATA LIST / GET DATA
+│   │   ├── stats.py          # AGGREGATE
+│   │   └── logic.py          # RECODE / COMPUTE
+│   └── tokens.py
+├── ir/                       # Intermediate Representation
+│   ├── model.py              # Pydantic models (Pipeline, Operation)
+│   └── types.py              # Enums (OpType, DataType)
+└── exporters/
+    ├── yaml.py               # Serializes IR to YAML
+    └── mermaid.py            # Visualizes IR as Flowchart
 
 ```
 
 ---
 
-## 🔮 Roadmap & Technical Debt
-
-While the compiler is robust for core ETL tasks, advanced statistical transformations are currently treated as "Black Boxes."
+## 🔮 Roadmap
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| **Logic & Math** | ✅ Complete | Full support for `COMPUTE`, `IF`, `SELECT IF`. |
+| **Logic & Math** | ✅ Complete | Full support for `COMPUTE`, `IF`, `RECODE`. |
 | **Aggregation** | ✅ Complete | White-box support for `BREAK` variables and formulas. |
 | **Joins** | ✅ Complete | Support for `MATCH FILES` / `STAR JOIN`. |
-| **Raw Data** | ✅ Complete | Safely ignores `BEGIN DATA` blocks. |
-| *RECODE* | ⚠️ Generic | Currently parsed as a generic passthrough. |
-| *DATA LIST* | ⚠️ Generic | Implicit schema definition not yet fully captured. |
+| **Schema Tracking** | ✅ Complete | Tracks column creation and types across the graph. |
+| **Control Flow** | ⚠️ Generic | `DO REPEAT` is currently flattened linearly. |
+| **SQL Generation** | 🚧 Next Up | Converting IR Node `op_aggregate` -> `GROUP BY`. |
 
 ---
 
-## 📝 Example Output
-
-Input SPSS:
-
-```spss
-AGGREGATE /OUTFILE=* /BREAK=region /total = SUM(sales).
-
-```
-
-Output YAML (IR):
-
-```yaml
-- id: op_020_aggregate
-  type: aggregate
-  inputs: [ds_019]
-  outputs: [ds_020]
-  parameters:
-    outfile: '*'
-    break: ['region']
-    aggregations: ['TOTAL = SUM(SALES)']
-
-```

@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 from src.ir.types import DataType
 
+
+
+
+
 @dataclass
 class AstNode:
     raw_command: str = "UNKNOWN" 
@@ -46,3 +50,17 @@ class AggregateNode(AstNode):
     outfile: str = ""
     break_vars: List[str] = field(default_factory=list)
     aggregations: List[str] = field(default_factory=list) # e.g. ["mean_x = MEAN(x)"]    
+
+
+@dataclass
+class DataListNode(AstNode):
+    columns: List[Tuple[str, DataType]] = field(default_factory=list)    
+
+
+@dataclass
+class RecodeNode(AstNode):
+    source_vars: List[str] = field(default_factory=list)
+    target_vars: List[str] = field(default_factory=list)
+    map_logic: str = ""    
+
+    

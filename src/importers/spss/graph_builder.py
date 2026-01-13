@@ -1,7 +1,7 @@
 import hashlib
 from platform import node
 from typing import List, Optional, Tuple
-from src.importers.spss.ast import AggregateNode, AstNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, SaveNode, GenericNode
+from src.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
 from src.ir.model import Pipeline, Dataset, Operation
 from src.ir.types import DataType, OpType
 
@@ -35,9 +35,9 @@ class GraphBuilder:
                 self._handle_load(node)
             elif isinstance(node, ComputeNode):
                 self._handle_compute(node)
-            elif isinstance(node, FilterNode): # 🟢 New
+            elif isinstance(node, FilterNode): 
                 self._handle_filter(node)
-            elif isinstance(node, MaterializeNode): # 🟢 New
+            elif isinstance(node, MaterializeNode): 
                 self._handle_materialize(node)
             elif isinstance(node, SaveNode):
                 self._handle_save(node)
@@ -45,10 +45,13 @@ class GraphBuilder:
                 self._handle_generic(node)
             elif isinstance(node, JoinNode):
                 self._handle_join(node)
+            elif isinstance(node, DataListNode):
+                self._handle_data_list(node)
             elif isinstance(node, AggregateNode):
                 self._handle_aggregate(node)
-
-
+            # 🟢 Dispatch Recode
+            elif isinstance(node, RecodeNode):
+                self._handle_recode(node)
 
         return Pipeline(datasets=self.datasets, operations=self.operations)
 
@@ -227,23 +230,41 @@ class GraphBuilder:
     def _handle_aggregate(self, node: AggregateNode):
         if not self.active_dataset_id: return
 
-        # 1. Determine Output ID
-        # If output is '*', it replaces/updates the active stream.
-        # If output is 'file.sav', it branches off to a side dataset.
         if node.outfile == "*" or node.outfile == "":
              new_ds_id = self._get_next_ds_id("agg_active")
              is_side_effect = False
         else:
-             new_ds_id = f"source_{node.outfile}" # Register as a source for later matching
+             new_ds_id = f"source_{node.outfile}"
              is_side_effect = True
 
-        # 2. Create Dataset
-        # Aggregation changes schema: starts with Break Vars + Agg Vars
-        # For MVP, we won't perfectly compute the schema, but we register the node.
-        new_ds = Dataset(id=new_ds_id, source="derived", columns=[])
+        # 🟢 CALCULATE OUTPUT SCHEMA
+        # 1. Start with Break Variables (Inherit types from input if possible)
+        new_cols = []
+        
+        # Lookup input dataset to find types of break vars
+        input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
+        input_schema = dict(input_ds.columns) if input_ds else {}
+
+        for break_var in node.break_vars:
+            # Default to String if unknown, or lookup
+            # In a real compiler, we'd do strictly typed lookup. 
+            # For now, simplistic inheritance is enough.
+            dtype = input_schema.get(break_var, DataType.UNKNOWN)
+            new_cols.append((break_var, dtype))
+
+        # 2. Add Aggregation Targets
+        for agg_expr in node.aggregations:
+            # expr format: "target = FUNC(src)"
+            if "=" in agg_expr:
+                target = agg_expr.split("=")[0].strip()
+                # Aggregations (SUM, MEAN, N) are almost always numeric
+                new_cols.append((target, DataType.INTEGER))
+
+        # Create Dataset with calculated schema
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
         self.datasets.append(new_ds)
 
-        # 3. Create Operation
+        # Create Operation
         op = Operation(
             id=self._get_next_op_id("aggregate"),
             type=OpType.AGGREGATE,
@@ -257,6 +278,63 @@ class GraphBuilder:
         )
         self.operations.append(op)
         
-        # 4. Update State ONLY if it's not a side-file
         if not is_side_effect:
             self.active_dataset_id = new_ds_id
+
+    def _handle_data_list(self, node: DataListNode):
+        """
+        Register a new dataset created by inline data.
+        """
+        # Create a new dataset ID
+        new_ds_id = self._get_next_ds_id("inline")
+        
+        # Register it with the explicit schema
+        new_ds = Dataset(id=new_ds_id, source="inline", columns=node.columns)
+        self.datasets.append(new_ds)
+        
+        # Create a 'Load' operation for it
+        op = Operation(
+            id=self._get_next_op_id("load_inline"),
+            type=OpType.LOAD,
+            inputs=[],
+            outputs=[new_ds_id],
+            params={'source_type': 'inline'}
+        )
+        self.operations.append(op)
+        
+        # Set as active
+        self.active_dataset_id = new_ds_id
+
+    def _handle_recode(self, node: RecodeNode):
+        # 1. Identify Input Dataset
+        input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
+        
+        # 2. Calculate New Schema
+        # Start with existing columns
+        new_cols = list(input_ds.columns) if input_ds else []
+        
+        # Add targets if they are new
+        existing_names = {c[0].upper() for c in new_cols}
+        
+        for target in node.target_vars:
+            if target.upper() not in existing_names:
+                # We inferred a new column!
+                # Note: RECODE usually produces the same type as source, or Numeric.
+                # For MVP, defaulting to UNKNOWN or INTEGER is safer than missing it.
+                new_cols.append((target, DataType.UNKNOWN)) 
+        
+        # 3. Create New Dataset State
+        new_ds_id = self._get_next_ds_id("recode")
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
+        self.datasets.append(new_ds)
+        
+        # 4. Create Operation
+        self.operations.append(Operation(
+            id=self._get_next_op_id("recode"),
+            type=OpType.COMPUTE, # or a new OpType.RECODE
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            params={'logic': node.map_logic}
+        ))
+        
+        self.active_dataset_id = new_ds_id
