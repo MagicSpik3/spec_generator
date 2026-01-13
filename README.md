@@ -1,5 +1,6 @@
 # SpecGen: Legacy SPSS to Modern ETL Compiler
 
+
 > **A semantic compiler that reverse-engineers legacy SPSS syntax into a platform-agnostic Intermediate Representation (IR).**
 
 `SpecGen` is not a transpiler; it is a **logic extractor**. It parses legacy scripts, builds a dependency graph of data transformations, and exports a clean YAML specification that can be used to generate SQL, R, or PySpark pipelines.
