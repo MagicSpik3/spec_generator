@@ -1,5 +1,31 @@
 # SpecGen: Legacy SPSS to Modern ETL Compiler
 
+### 3. The Frontend (`spec_generator`)
+**Location:** `~/git/spec_generator/README.md`
+**Audience:** The "Archaeologist" (You).
+
+```markdown
+# 🔍 SPSS Specification Generator
+
+The "Frontend" of the compiler. This library is responsible for ingesting legacy source code (SPSS Syntax) and standardizing it into the compiler's Intermediate Representation (IR).
+
+## Capabilities
+* **Lexical Analysis:** Tokenizes raw SPSS syntax.
+* **AST Construction:** Builds a tree of `ComputeNode`, `FilterNode`, etc.
+* **Graph Builder:** Converts the AST into a directed acyclic graph (DAG) of data flow.
+
+## supported Commands
+* `DATA LIST` / `GET DATA`
+* `COMPUTE` / `IF`
+* `SELECT IF` / `FILTER`
+* `MATCH FILES` (Joins)
+* `AGGREGATE`
+
+```
+
+---
+
+
 > **A semantic compiler that reverse-engineers legacy SPSS syntax into a platform-agnostic Intermediate Representation (IR).**
 
 SpecGen is not a simple transpiler. It is a **logic extractor**. It parses legacy scripts, builds a dependency graph of data transformations, tracks variable lineage through complex logic, and exports a clean specification that can be used to generate SQL, R, or PySpark pipelines.
