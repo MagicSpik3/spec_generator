@@ -1,5 +1,5 @@
 import yaml
-from src.ir.model import Pipeline, Dataset, Operation
+from etl_ir.model import Pipeline, Dataset, Operation
 
 class IrYamlExporter:
     def export(self, pipeline: Pipeline, output_path: str):
@@ -20,7 +20,7 @@ class IrYamlExporter:
                     "id": ds.id,
                     "source": ds.source,
                     "columns": [
-                        {"name": col[0], "type": col[1].value} 
+                        {"name": col.name, "type": col.type.value} 
                         for col in ds.columns
                     ]
                 }
@@ -32,7 +32,7 @@ class IrYamlExporter:
                     "type": op.type.value,
                     "inputs": op.inputs,
                     "outputs": op.outputs,
-                    "parameters": op.params
+                    "parameters": op.parameters
                 }
                 for op in pipeline.operations
             ]

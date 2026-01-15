@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
-from src.ir.types import DataType
+from etl_ir.types import DataType
 
 
 

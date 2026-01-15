@@ -44,4 +44,4 @@ class TestPendingFeatures:
         
         assert isinstance(nodes[0], DataListNode)
         assert len(nodes[0].columns) == 1
-        assert nodes[0].columns[0][0] == "id"
+        assert nodes[0].columns[0].name == "id"

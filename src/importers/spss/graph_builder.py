@@ -2,8 +2,9 @@ import hashlib
 from platform import node
 from typing import List, Optional, Tuple
 from src.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
-from src.ir.model import Pipeline, Dataset, Operation
-from src.ir.types import DataType, OpType
+from etl_ir.model import Pipeline, Dataset, Operation, Column
+from etl_ir.types import DataType, OpType
+
 
 class GraphBuilder:
     def __init__(self):
@@ -74,10 +75,10 @@ class GraphBuilder:
         
         op = Operation(
             id=self._get_next_op_id("load"),
-            type=OpType.LOAD,
+            type=OpType.LOAD_CSV,
             inputs=[],
             outputs=[dataset_id],
-            params={'filename': node.filename, 'format': node.file_type}
+            parameters={'filename': node.filename, 'format': node.file_type}
         )
         self.operations.append(op)
         self.active_dataset_id = dataset_id
@@ -91,11 +92,10 @@ class GraphBuilder:
         
         # 2. Update or Append the target variable
         # Check if it already exists (mutation) or is new
-        existing_idx = next((i for i, c in enumerate(new_columns) if c[0] == node.target), -1)
+        existing_idx = next((i for i, c in enumerate(new_columns) if c.name == node.target), -1)
         
         # For now, we assume numeric type for computed vars (can be refined later)
-        new_col_def = (node.target, DataType.INTEGER) 
-        
+        new_col_def = Column(name=node.target, type=DataType.INTEGER)
         if existing_idx >= 0:
             new_columns[existing_idx] = new_col_def
         else:
@@ -106,10 +106,10 @@ class GraphBuilder:
 
         op = Operation(
             id=self._get_next_op_id("compute"),
-            type=OpType.COMPUTE,
+            type=OpType.COMPUTE_COLUMNS,
             inputs=[self.active_dataset_id] if self.active_dataset_id else [],
             outputs=[new_ds_id],
-            params={'target': node.target, 'expression': node.expression}
+            parameters={'target': node.target, 'expression': node.expression}
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id
@@ -122,10 +122,10 @@ class GraphBuilder:
 
         op = Operation(
             id=self._get_next_op_id("save"),
-            type=OpType.SAVE,
+            type=OpType.SAVE_BINARY,
             inputs=[self.active_dataset_id] if self.active_dataset_id else [],
             outputs=[file_ds_id],
-            params={'filename': node.filename}
+            parameters={'filename': node.filename}
         )
         self.operations.append(op)
 
@@ -138,10 +138,10 @@ class GraphBuilder:
             
             op = Operation(
                 id=self._get_next_op_id("generic"),
-                type=OpType.GENERIC,
+                type=OpType.GENERIC_TRANSFORM,
                 inputs=[self.active_dataset_id],
                 outputs=[new_ds_id],
-                params={'command': node.command}
+                parameters={'command': node.command}
             )
             self.operations.append(op)
             self.active_dataset_id = new_ds_id
@@ -157,10 +157,10 @@ class GraphBuilder:
 
         op = Operation(
             id=self._get_next_op_id("filter"),
-            type=OpType.FILTER,
+            type=OpType.FILTER_ROWS,
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
-            params={'condition': node.condition}
+            parameters={'condition': node.condition}
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id
@@ -179,7 +179,7 @@ class GraphBuilder:
             type=OpType.MATERIALIZE,
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
-            params={}
+            parameters={}
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id            
@@ -221,14 +221,12 @@ class GraphBuilder:
             type=OpType.JOIN,
             inputs=input_ids,
             outputs=[new_ds_id],
-            params={'by': ", ".join(node.by)}
+            parameters={'by': ", ".join(node.by)}
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id
 
-
     def _handle_aggregate(self, node: AggregateNode):
-        if not self.active_dataset_id: return
 
         if node.outfile == "*" or node.outfile == "":
              new_ds_id = self._get_next_ds_id("agg_active")
@@ -241,24 +239,21 @@ class GraphBuilder:
         # 1. Start with Break Variables (Inherit types from input if possible)
         new_cols = []
         
-        # Lookup input dataset to find types of break vars
+        # 🟢 FIX 1: Create lookup dict from Objects, not Tuples
         input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
-        input_schema = dict(input_ds.columns) if input_ds else {}
+        input_schema = {c.name: c.type for c in input_ds.columns} if input_ds else {}
 
         for break_var in node.break_vars:
-            # Default to String if unknown, or lookup
-            # In a real compiler, we'd do strictly typed lookup. 
-            # For now, simplistic inheritance is enough.
             dtype = input_schema.get(break_var, DataType.UNKNOWN)
-            new_cols.append((break_var, dtype))
+            # 🟢 FIX 2: Append Object, not Tuple
+            new_cols.append(Column(name=break_var, type=dtype))
 
         # 2. Add Aggregation Targets
         for agg_expr in node.aggregations:
-            # expr format: "target = FUNC(src)"
             if "=" in agg_expr:
                 target = agg_expr.split("=")[0].strip()
-                # Aggregations (SUM, MEAN, N) are almost always numeric
-                new_cols.append((target, DataType.INTEGER))
+                # 🟢 FIX 3: Append Object, not Tuple
+                new_cols.append(Column(name=target, type=DataType.INTEGER))
 
         # Create Dataset with calculated schema
         new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
@@ -270,7 +265,7 @@ class GraphBuilder:
             type=OpType.AGGREGATE,
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
-            params={
+            parameters={
                 'outfile': node.outfile,
                 'break': node.break_vars,
                 'aggregations': node.aggregations
@@ -295,10 +290,10 @@ class GraphBuilder:
         # Create a 'Load' operation for it
         op = Operation(
             id=self._get_next_op_id("load_inline"),
-            type=OpType.LOAD,
+            type=OpType.LOAD_CSV,
             inputs=[],
             outputs=[new_ds_id],
-            params={'source_type': 'inline'}
+            parameters={'source_type': 'inline'}
         )
         self.operations.append(op)
         
@@ -314,14 +309,13 @@ class GraphBuilder:
         new_cols = list(input_ds.columns) if input_ds else []
         
         # Add targets if they are new
-        existing_names = {c[0].upper() for c in new_cols}
+        existing_names = {c.name.upper() for c in new_cols}
         
         for target in node.target_vars:
             if target.upper() not in existing_names:
-                # We inferred a new column!
-                # Note: RECODE usually produces the same type as source, or Numeric.
-                # For MVP, defaulting to UNKNOWN or INTEGER is safer than missing it.
-                new_cols.append((target, DataType.UNKNOWN)) 
+                # 🟢 FIX 4: Append Object, not Tuple
+                new_cols.append(Column(name=target, type=DataType.UNKNOWN))
+
         
         # 3. Create New Dataset State
         new_ds_id = self._get_next_ds_id("recode")
@@ -331,10 +325,10 @@ class GraphBuilder:
         # 4. Create Operation
         self.operations.append(Operation(
             id=self._get_next_op_id("recode"),
-            type=OpType.COMPUTE, # or a new OpType.RECODE
+            type=OpType.COMPUTE_COLUMNS, # or a new OpType.RECODE
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
-            params={'logic': node.map_logic}
+            parameters={'logic': node.map_logic}
         ))
         
         self.active_dataset_id = new_ds_id

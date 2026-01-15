@@ -1,7 +1,7 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.graph_builder import GraphBuilder
-from src.ir.types import DataType
+from etl_ir.types import DataType
 
 class TestProfessorSimulation:
     
@@ -40,7 +40,7 @@ class TestProfessorSimulation:
         
         # 2. Inspect the Final Dataset (The result of AGGREGATE)
         final_ds = pipeline.datasets[-1]
-        columns = {c[0].upper() for c in final_ds.columns}
+        columns = {c.name.upper() for c in final_ds.columns}
         
         # Assertion 1: Break variable exists
         assert "REGION" in columns
@@ -69,6 +69,6 @@ class TestProfessorSimulation:
         assert ds.id.startswith("source_") or ds.id.startswith("ds_")
         
         # We know 'id' is in there
-        schema = {c[0].upper() for c in ds.columns}
+        schema = {c.name.upper() for c in ds.columns}
         assert "ID" in schema
         assert "REGION" not in schema # Proves we know what we DON'T have

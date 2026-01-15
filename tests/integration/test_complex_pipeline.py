@@ -1,7 +1,7 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.graph_builder import GraphBuilder
-from src.ir.types import OpType
+from etl_ir.types import OpType
 
 class TestComplexPipeline:
     def test_aggregate_and_join_flow(self):
@@ -38,7 +38,7 @@ class TestComplexPipeline:
         ops = pipeline.operations
         
         # Check Operation Types
-        assert ops[0].type == OpType.LOAD
+        assert ops[0].type == OpType.LOAD_CSV
         assert ops[1].type == OpType.AGGREGATE # This will fail until we implement the Builder logic
         assert ops[2].type == OpType.JOIN
         

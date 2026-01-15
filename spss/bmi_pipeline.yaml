@@ -1,0 +1,248 @@
+metadata:
+  generator: SpecGen v0.1
+  source_type: SPSS
+datasets:
+- id: source_data.csv
+  source: file
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+- id: ds_001_derived
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+- id: ds_002_materialized
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+- id: ds_003_generic
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+- id: ds_004_recode
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: ds_005_materialized
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: ds_006_generic
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: ds_007_generic
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: ds_008_generic
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: ds_009_generic
+  source: derived
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+- id: file_gold_output.csv
+  source: file
+  columns:
+  - name: id
+    type: integer
+  - name: gender
+    type: string
+  - name: height_m
+    type: integer
+  - name: weight_kg
+    type: integer
+  - name: bmi
+    type: integer
+  - name: bmi_category
+    type: unknown
+operations:
+- id: op_001_load
+  type: load_csv
+  inputs: []
+  outputs:
+  - source_data.csv
+  parameters:
+    filename: data.csv
+    format: TXT
+- id: op_002_compute
+  type: compute_columns
+  inputs:
+  - source_data.csv
+  outputs:
+  - ds_001_derived
+  parameters:
+    target: bmi
+    expression: weight_kg / ( height_m * height_m )
+- id: op_003_exec
+  type: materialize
+  inputs:
+  - ds_001_derived
+  outputs:
+  - ds_002_materialized
+  parameters: {}
+- id: op_004_generic
+  type: generic_transform
+  inputs:
+  - ds_002_materialized
+  outputs:
+  - ds_003_generic
+  parameters:
+    command: STRING
+- id: op_005_recode
+  type: compute_columns
+  inputs:
+  - ds_003_generic
+  outputs:
+  - ds_004_recode
+  parameters:
+    logic: ( Lo THRU 18.499 = 'Underweight' ) ( 18.5 THRU 24.999 = 'Normal' ) ( 25.0
+      THRU 29.999 = 'Overweight' ) ( 30.0 THRU Hi = 'Obese' )
+- id: op_006_exec
+  type: materialize
+  inputs:
+  - ds_004_recode
+  outputs:
+  - ds_005_materialized
+  parameters: {}
+- id: op_007_generic
+  type: generic_transform
+  inputs:
+  - ds_005_materialized
+  outputs:
+  - ds_006_generic
+  parameters:
+    command: VARIABLE
+- id: op_008_generic
+  type: generic_transform
+  inputs:
+  - ds_006_generic
+  outputs:
+  - ds_007_generic
+  parameters:
+    command: DESCRIPTIVES
+- id: op_009_generic
+  type: generic_transform
+  inputs:
+  - ds_007_generic
+  outputs:
+  - ds_008_generic
+  parameters:
+    command: FREQUENCIES
+- id: op_010_generic
+  type: generic_transform
+  inputs:
+  - ds_008_generic
+  outputs:
+  - ds_009_generic
+  parameters:
+    command: CROSSTABS
+- id: op_011_save
+  type: save_binary
+  inputs:
+  - ds_009_generic
+  outputs:
+  - file_gold_output.csv
+  parameters:
+    filename: gold_output.csv

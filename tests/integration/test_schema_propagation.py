@@ -1,7 +1,7 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.graph_builder import GraphBuilder
-from src.ir.types import DataType
+from etl_ir.types import DataType
 
 class TestSchemaPropagation:
     
@@ -22,13 +22,13 @@ class TestSchemaPropagation:
         ds = pipeline.datasets[-1]
         
         # Check columns exist (Case Insensitive)
-        col_names = [c[0].upper() for c in ds.columns]
+        col_names = [c.name.upper() for c in ds.columns]
         assert "ID" in col_names
         assert "AGE" in col_names
         
         # Check types (We need to find the specific column to check type)
-        age_col = next(c for c in ds.columns if c[0].upper() == "AGE")
-        assert age_col[1] == DataType.INTEGER
+        age_col = next(c for c in ds.columns if c.name.upper() == "AGE")
+        assert age_col.type == DataType.INTEGER
 
     def test_aggregate_calculates_output_schema(self):
         """
@@ -48,8 +48,8 @@ class TestSchemaPropagation:
         
         # The last dataset is the result of the AGGREGATE
         agg_ds = pipeline.datasets[-1]
-        cols = [c[0].upper() for c in agg_ds.columns]
-        
+        cols = [c.name.upper() for c in agg_ds.columns]
+
         # 1. Break variable must be preserved
         assert "REGION" in cols
         

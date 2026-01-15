@@ -1,12 +1,28 @@
-# Core Logic
-pydantic>=2.5.0
-pyyaml>=6.0
-
-# Testing & Quality
-pytest>=8.0.0
-pytest-cov>=4.1.0
-coverage>=7.4.0
-
-# Optional: For nice graph visualization later
-networkx>=3.2.1
-matplotlib>=3.8.0
+annotated-types==0.7.0
+contourpy==1.3.3
+coverage==7.13.1
+cycler==0.12.1
+-e git+https://github.com/MagicSpik3/etl-ir-core@3ccf15ee9fb4f36ae52e0a7c04bf51977205b51b#egg=etl_ir_core
+fonttools==4.61.1
+iniconfig==2.3.0
+kiwisolver==1.4.9
+matplotlib==3.10.8
+networkx==3.6.1
+numpy==2.4.1
+packaging==25.0
+pandas==2.3.3
+pillow==12.1.0
+pluggy==1.6.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+Pygments==2.19.2
+pyparsing==3.3.1
+pytest==9.0.2
+pytest-cov==7.0.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+PyYAML==6.0.3
+six==1.17.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2025.3

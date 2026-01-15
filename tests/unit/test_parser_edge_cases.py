@@ -1,7 +1,8 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.ast import GenericNode, LoadNode, JoinNode, ComputeNode
-from src.ir.types import DataType
+from etl_ir.types import DataType
+from etl_ir.model import Column
 
 class TestParserEdgeCases:
     
@@ -42,9 +43,9 @@ class TestParserEdgeCases:
         
         # Verify the parsing logic inside _parse_variables_block
         assert len(cols) == 3
-        assert cols[0] == ("id", DataType.INTEGER)
-        assert cols[1] == ("name", DataType.STRING)
-        assert cols[2] == ("date_col", DataType.DATE)
+        assert cols[0] == Column(name="id", type=DataType.INTEGER)
+        assert cols[1] == Column(name="name", type=DataType.STRING)
+        assert cols[2] == Column(name="date_col", type=DataType.DATE)
 
     # --------------------------------------------------------------------------
     # 3. Compute Syntax Errors (Lines 88, 94)

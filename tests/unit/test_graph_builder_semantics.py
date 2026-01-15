@@ -1,7 +1,7 @@
 import pytest
 from src.importers.spss.graph_builder import GraphBuilder
 from src.importers.spss.ast import FilterNode, MaterializeNode, JoinNode, LoadNode
-from src.ir.types import OpType
+from etl_ir.types import OpType
 
 class TestGraphBuilderSemantics:
     
@@ -22,8 +22,8 @@ class TestGraphBuilderSemantics:
         # 3. Verify
         ops = pipeline.operations
         assert len(ops) == 2
-        assert ops[1].type == OpType.FILTER
-        assert ops[1].params['condition'] == "age > 18"
+        assert ops[1].type == OpType.FILTER_ROWS
+        assert ops[1].parameters['condition'] == "age > 18"
         
         # Verify Lineage
         assert ops[1].inputs == ops[0].outputs
@@ -61,7 +61,7 @@ class TestGraphBuilderSemantics:
         join_op = ops[1]
         
         assert join_op.type == OpType.JOIN
-        assert join_op.params['by'] == "id"
+        assert join_op.parameters['by'] == "id"
         
         # Critical: Verify Inputs
         # Input 0: The output of load_main (because of '*')

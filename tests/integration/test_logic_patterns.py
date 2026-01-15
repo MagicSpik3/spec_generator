@@ -1,7 +1,8 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.graph_builder import GraphBuilder
-from src.ir.types import DataType, OpType
+from etl_ir.types import DataType, OpType
+from etl_ir.model import Column          
 
 class TestLogicPatterns:
     
@@ -25,7 +26,7 @@ class TestLogicPatterns:
         pipeline = self.builder.build(nodes)
         
         final_ds = pipeline.datasets[-1]
-        cols = {c[0] for c in final_ds.columns}
+        cols = {c.name for c in final_ds.columns}
         
         # The final dataset must have ALL history, not just the last compute
         assert "id" in cols
@@ -35,7 +36,7 @@ class TestLogicPatterns:
         
         # Verify Lineage depth (Optimization check)
         # There should be 3 compute operations
-        computes = [op for op in pipeline.operations if op.type == OpType.COMPUTE]
+        computes = [op for op in pipeline.operations if op.type == OpType.COMPUTE_COLUMNS]
         assert len(computes) == 3
 
     def test_pattern_gatekeeper(self):
@@ -57,9 +58,9 @@ class TestLogicPatterns:
         
         # Topology Check:
         # Load(0) -> Compute X(1) -> Filter(2) -> Compute Y(3)
-        assert ops[1].type == OpType.COMPUTE and ops[1].params['target'] == 'x'
-        assert ops[2].type == OpType.FILTER
-        assert ops[3].type == OpType.COMPUTE and ops[3].params['target'] == 'y'
+        assert ops[1].type == OpType.COMPUTE_COLUMNS and ops[1].parameters['target'] == 'x'
+        assert ops[2].type == OpType.FILTER_ROWS
+        assert ops[3].type == OpType.COMPUTE_COLUMNS and ops[3].parameters['target'] == 'y'
         
         # Crucial: Op 3's Input must be Op 2's Output
         filter_out = ops[2].outputs[0]
@@ -82,7 +83,7 @@ class TestLogicPatterns:
         nodes = self.parser.parse(code)
         pipeline = self.builder.build(nodes)
         
-        saves = [op for op in pipeline.operations if op.type == OpType.SAVE]
+        saves = [op for op in pipeline.operations if op.type == OpType.SAVE_BINARY]
         assert len(saves) == 2
         
         # Check inputs for the second save
@@ -92,6 +93,6 @@ class TestLogicPatterns:
         final_ds_id = final_save_op.inputs[0] # Save reads from this DS
         final_ds = next(d for d in pipeline.datasets if d.id == final_ds_id)
         
-        cols = {c[0] for c in final_ds.columns}
+        cols = {c.name for c in final_ds.columns}
         assert "a" in cols # Inherited
         assert "b" in cols # New

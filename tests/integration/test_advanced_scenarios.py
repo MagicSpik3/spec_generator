@@ -1,7 +1,7 @@
 import pytest
 from src.importers.spss.parser import SpssParser
 from src.importers.spss.graph_builder import GraphBuilder
-from src.ir.types import OpType
+from etl_ir.types import OpType
 
 class TestAdvancedScenarios:
     
@@ -61,13 +61,13 @@ class TestAdvancedScenarios:
         op_types = [op.type for op in ops]
         
         expected_sequence = [
-            OpType.LOAD,
-            OpType.COMPUTE,
-            OpType.FILTER,
+            OpType.LOAD_CSV,
+            OpType.COMPUTE_COLUMNS,
+            OpType.FILTER_ROWS,
             OpType.MATERIALIZE,
             OpType.AGGREGATE,
             OpType.JOIN,
-            OpType.SAVE
+            OpType.SAVE_BINARY
         ]
         
         assert op_types == expected_sequence
@@ -80,7 +80,7 @@ class TestAdvancedScenarios:
         # The aggregate output should be the second input to the join (lookup table)
         # Input 0 is '*', Input 1 is 'risk_summary.sav'
         assert agg_op.outputs[0] in join_op.inputs or \
-               f"source_{agg_op.params['outfile']}" in join_op.inputs
+               f"source_{agg_op.parameters['outfile']}" in join_op.inputs
 
     def test_variable_block_parsing_in_pipeline(self):
         """
@@ -97,7 +97,7 @@ class TestAdvancedScenarios:
         
         # Check the schema of the first dataset
         first_ds = pipeline.datasets[0]
-        col_names = [c[0] for c in first_ds.columns]
+        col_names = [c.name for c in first_ds.columns]
         
         assert "id" in col_names
         assert "start_date" in col_names

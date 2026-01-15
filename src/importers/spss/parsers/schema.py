@@ -2,7 +2,8 @@ from typing import List, Tuple
 from src.importers.spss.parsers.base import BaseParserMixin
 from src.importers.spss.tokens import TokenType
 from src.importers.spss.ast import DataListNode
-from src.ir.types import DataType
+from etl_ir.types import DataType
+from etl_ir.model import Column
 
 class SchemaParserMixin(BaseParserMixin):
     """
@@ -37,7 +38,7 @@ class SchemaParserMixin(BaseParserMixin):
         self.advance() # Skip terminator
         return DataListNode(columns=columns)
 
-    def _parse_variables_block(self, block_text: str) -> List[Tuple[str, DataType]]:
+    def _parse_variables_block(self, block_text: str) -> List[Column]:
         """
         Parses "name type name type" strings.
         """
@@ -60,7 +61,8 @@ class SchemaParserMixin(BaseParserMixin):
                 elif type_val.startswith("A") or "STR" in type_val: 
                     col_type = DataType.STRING
                 
-                columns.append((t_name.value, col_type))
+                columns.append(Column(name=t_name.value, type=col_type))
+                
                 i += 2
             else:
                 i += 1

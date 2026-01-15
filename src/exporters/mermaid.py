@@ -1,5 +1,5 @@
-from src.ir.model import Pipeline
-from src.ir.types import OpType
+from etl_ir.model import Pipeline
+from etl_ir.types import OpType
 
 class MermaidExporter:
     def export(self, pipeline: Pipeline) -> str:
@@ -40,24 +40,24 @@ class MermaidExporter:
         return "\n".join(lines)
 
     def _get_style(self, op_type: OpType) -> str:
-        if op_type == OpType.LOAD: return "op_load"
-        if op_type == OpType.SAVE: return "op_save"
-        if op_type == OpType.COMPUTE: return "op_compute"
-        if op_type == OpType.FILTER: return "op_filter"
+        if op_type == OpType.LOAD_CSV: return "op_load"
+        if op_type == OpType.SAVE_BINARY: return "op_save"
+        if op_type == OpType.COMPUTE_COLUMNS: return "op_compute"
+        if op_type == OpType.FILTER_ROWS: return "op_filter"
         if op_type == OpType.AGGREGATE: return "op_agg"
         if op_type == OpType.JOIN: return "op_join"
         return "op_generic"
 
     def _get_label(self, op) -> str:
         # Smart labels based on context
-        if op.type == OpType.COMPUTE:
-            return f"COMPUTE<br/>{op.params.get('target')} = ..."
-        if op.type == OpType.FILTER:
-            return f"FILTER<br/>{op.params.get('condition')}"
+        if op.type == OpType.COMPUTE_COLUMNS:
+            return f"COMPUTE<br/>{op.parameters.get('target')} = ..."
+        if op.type == OpType.FILTER_ROWS:
+            return f"FILTER<br/>{op.parameters.get('condition')}"
         if op.type == OpType.AGGREGATE:
-            return f"AGGREGATE<br/>By: {op.params.get('break')}"
+            return f"AGGREGATE<br/>By: {op.parameters.get('break')}"
         if op.type == OpType.JOIN:
-            return f"JOIN<br/>On: {op.params.get('by')}"
-        if op.type == OpType.GENERIC:
-            return f"GENERIC<br/>{op.params.get('command')}"
+            return f"JOIN<br/>On: {op.parameters.get('by')}"
+        if op.type == OpType.GENERIC_TRANSFORM:
+            return f"GENERIC<br/>{op.parameters.get('command')}"
         return op.type.value.upper()

@@ -37,7 +37,7 @@ class TestGhostColumns:
         # 1. Check the dataset BEFORE the aggregation (Result of RECODE)
         # We expect to find 'is_adult' here, but we won't because RECODE is generic.
         pre_agg_ds = pipeline.datasets[-2] 
-        cols = {c[0].upper() for c in pre_agg_ds.columns}
+        cols = {c.name.upper() for c in pre_agg_ds.columns}
         
         # 🚩 THIS WILL FAIL
         assert "IS_ADULT" in cols, "Curve Ball: RECODE failed to register the new variable!"
