@@ -6,13 +6,14 @@ from etl_ir.model import Pipeline, Dataset, Operation, Column
 from etl_ir.types import DataType, OpType
 
 
+
 class GraphBuilder:
-    def __init__(self):
+    # 🟢 FIX: Accept metadata in __init__
+    def __init__(self, metadata: dict = None):
+        self.metadata = metadata or {}  # Store it
         self.datasets: List[Dataset] = []
         self.operations: List[Operation] = []
         self.active_dataset_id: Optional[str] = None
-        
-        # 🟢 Determinism Helpers
         self.op_counter = 0
         self.ds_counter = 0
 
@@ -54,7 +55,11 @@ class GraphBuilder:
             elif isinstance(node, RecodeNode):
                 self._handle_recode(node)
 
-        return Pipeline(datasets=self.datasets, operations=self.operations)
+        return Pipeline(
+            metadata=self.metadata,  # 🟢 FIX: Pass the stored metadata here
+            datasets=self.datasets, 
+            operations=self.operations
+        )
 
     def _get_active_columns(self) -> List[Tuple[str, DataType]]:
         """Helper to fetch columns from the currently active dataset."""
