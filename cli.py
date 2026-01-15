@@ -1,10 +1,10 @@
 import argparse
 from pathlib import Path
 import sys
-from src.importers.spss.parser import SpssParser
-from src.importers.spss.graph_builder import GraphBuilder
-from src.exporters.yaml import IrYamlExporter
-from src.exporters.mermaid import MermaidExporter # 🟢 Import new exporter
+from spec_generator.importers.spss.parser import SpssParser
+from spec_generator.importers.spss.graph_builder import GraphBuilder
+from spec_generator.exporters.yaml import IrYamlExporter
+from spec_generator.exporters.mermaid import MermaidExporter # 🟢 Import new exporter
 
 def main():
     parser = argparse.ArgumentParser(description="SpecGen: Legacy SPSS Compiler")

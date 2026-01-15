@@ -1,6 +1,6 @@
 import pytest
-from src.importers.spss.lexer import SpssLexer
-from src.importers.spss.tokens import TokenType
+from spec_generator.importers.spss.lexer import SpssLexer
+from spec_generator.importers.spss.tokens import TokenType
 
 class TestLexerRobustness:
     """

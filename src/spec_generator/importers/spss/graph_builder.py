@@ -1,7 +1,7 @@
 import hashlib
 from platform import node
 from typing import List, Optional, Tuple
-from src.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
+from spec_generator.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
 from etl_ir.model import Pipeline, Dataset, Operation, Column
 from etl_ir.types import DataType, OpType
 

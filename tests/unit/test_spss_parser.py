@@ -1,6 +1,6 @@
 import pytest
-from src.importers.spss.parser import SpssParser
-from src.importers.spss.ast import LoadNode, ComputeNode, SaveNode
+from spec_generator.importers.spss.parser import SpssParser
+from spec_generator.importers.spss.ast import LoadNode, ComputeNode, SaveNode
 
 class TestSpssParser:
     def setup_method(self):

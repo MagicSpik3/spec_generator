@@ -1,7 +1,7 @@
 import re
 from typing import List
-from src.importers.spss.tokens import Token, TokenType
-from src.importers.spss.grammar import SPSS_TOKENS
+from spec_generator.importers.spss.tokens import Token, TokenType
+from spec_generator.importers.spss.grammar import SPSS_TOKENS
 
 class SpssLexer:
     """

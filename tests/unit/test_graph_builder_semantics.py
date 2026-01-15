@@ -1,6 +1,6 @@
 import pytest
-from src.importers.spss.graph_builder import GraphBuilder
-from src.importers.spss.ast import FilterNode, MaterializeNode, JoinNode, LoadNode
+from spec_generator.importers.spss.graph_builder import GraphBuilder
+from spec_generator.importers.spss.ast import FilterNode, MaterializeNode, JoinNode, LoadNode
 from etl_ir.types import OpType
 
 class TestGraphBuilderSemantics:

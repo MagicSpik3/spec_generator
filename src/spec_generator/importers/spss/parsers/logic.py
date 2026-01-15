@@ -1,7 +1,7 @@
 from typing import List
-from src.importers.spss.parsers.base import BaseParserMixin
-from src.importers.spss.tokens import TokenType
-from src.importers.spss.ast import RecodeNode
+from spec_generator.importers.spss.parsers.base import BaseParserMixin
+from spec_generator.importers.spss.tokens import TokenType
+from spec_generator.importers.spss.ast import RecodeNode
 
 class LogicParserMixin(BaseParserMixin):
     

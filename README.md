@@ -36,7 +36,7 @@ graph LR
 
 ```
 
-### 1. The Modular Parser (`src/importers/spss/parsers/`)
+### 1. The Modular Parser (`spec_generator.importers/spss/parsers/`)
 
 We moved away from a monolithic parser to a **Mixin-based Facade Pattern**:
 

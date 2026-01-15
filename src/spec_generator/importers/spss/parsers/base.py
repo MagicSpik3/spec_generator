@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
-from src.importers.spss.tokens import Token, TokenType
-from src.importers.spss.lexer import SpssLexer
+from spec_generator.importers.spss.tokens import Token, TokenType
+from spec_generator.importers.spss.lexer import SpssLexer
 
 class BaseParserMixin:
     """

@@ -1,7 +1,7 @@
 from typing import List, Tuple
-from src.importers.spss.parsers.base import BaseParserMixin
-from src.importers.spss.tokens import TokenType
-from src.importers.spss.ast import DataListNode
+from spec_generator.importers.spss.parsers.base import BaseParserMixin
+from spec_generator.importers.spss.tokens import TokenType
+from spec_generator.importers.spss.ast import DataListNode
 from etl_ir.types import DataType
 from etl_ir.model import Column
 

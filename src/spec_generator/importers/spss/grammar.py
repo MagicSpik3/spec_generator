@@ -1,5 +1,5 @@
 import re
-from src.importers.spss.tokens import TokenType
+from spec_generator.importers.spss.tokens import TokenType
 
 # ------------------------------------------------------------------------------
 # 📜 SPSS GRAMMAR DEFINITIONS

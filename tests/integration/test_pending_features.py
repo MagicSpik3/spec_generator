@@ -1,6 +1,6 @@
 import pytest
-from src.importers.spss.parser import SpssParser
-from src.importers.spss.ast import GenericNode, DataListNode, RecodeNode
+from spec_generator.importers.spss.parser import SpssParser
+from spec_generator.importers.spss.ast import GenericNode, DataListNode, RecodeNode
 
 class TestPendingFeatures:
     """
