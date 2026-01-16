@@ -1,16 +1,18 @@
 import hashlib
-from platform import node
 from typing import List, Optional, Tuple
-from spec_generator.importers.spss.ast import AggregateNode, AstNode, DataListNode, FilterNode, JoinNode, LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode
+
+# 🟢 Cleaned Import: Removed 'from platform import node'
+from spec_generator.importers.spss.ast import (
+    AggregateNode, AstNode, DataListNode, FilterNode, JoinNode,
+    LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode, IgnorableNode
+)
 from etl_ir.model import Pipeline, Dataset, Operation, Column
 from etl_ir.types import DataType, OpType
 
 
-
 class GraphBuilder:
-    # 🟢 FIX: Accept metadata in __init__
     def __init__(self, metadata: dict = None):
-        self.metadata = metadata or {}  # Store it
+        self.metadata = metadata or {}
         self.datasets: List[Dataset] = []
         self.operations: List[Operation] = []
         self.active_dataset_id: Optional[str] = None
@@ -33,6 +35,10 @@ class GraphBuilder:
         self.ds_counter = 0
 
         for node in nodes:
+            # 🟢 IMPROVEMENT: Check noise first for speed and clarity
+            if isinstance(node, IgnorableNode):
+                continue
+            
             if isinstance(node, LoadNode):
                 self._handle_load(node)
             elif isinstance(node, ComputeNode):
@@ -51,31 +57,36 @@ class GraphBuilder:
                 self._handle_data_list(node)
             elif isinstance(node, AggregateNode):
                 self._handle_aggregate(node)
-            # 🟢 Dispatch Recode
             elif isinstance(node, RecodeNode):
                 self._handle_recode(node)
 
         return Pipeline(
-            metadata=self.metadata,  # 🟢 FIX: Pass the stored metadata here
+            metadata=self.metadata,
             datasets=self.datasets, 
             operations=self.operations
         )
 
-    def _get_active_columns(self) -> List[Tuple[str, DataType]]:
+    def _get_active_columns(self) -> List[Column]:
         """Helper to fetch columns from the currently active dataset."""
         if not self.active_dataset_id:
             return []
         
-        # Find the dataset object
-        # (In production, use a Dict for O(1) lookup)
         for ds in self.datasets:
             if ds.id == self.active_dataset_id:
-                return ds.columns.copy() # Return copy to prevent mutation issues
+                return ds.columns.copy()
         return []
 
     def _handle_load(self, node: LoadNode):
         dataset_id = f"source_{node.filename}"
-        ds = Dataset(id=dataset_id, source="file", columns=node.columns)
+        
+        # 🟢 FIX: Convert AST Tuples to IR Column Objects
+        # This prevents crashes later when accessing .name or .type
+        ir_columns = [
+            Column(name=col[0], type=col[1]) if isinstance(col, tuple) else col 
+            for col in node.columns
+        ]
+
+        ds = Dataset(id=dataset_id, source="file", columns=ir_columns)
         self.datasets.append(ds)
         
         op = Operation(
@@ -88,19 +99,37 @@ class GraphBuilder:
         self.operations.append(op)
         self.active_dataset_id = dataset_id
 
+    def _handle_data_list(self, node: DataListNode):
+        new_ds_id = self._get_next_ds_id("inline")
+        
+        # 🟢 FIX: Convert AST Tuples to IR Column Objects
+        ir_columns = [
+            Column(name=col[0], type=col[1]) if isinstance(col, tuple) else col 
+            for col in node.columns
+        ]
+
+        new_ds = Dataset(id=new_ds_id, source="inline", columns=ir_columns)
+        self.datasets.append(new_ds)
+        
+        op = Operation(
+            id=self._get_next_op_id("load_inline"),
+            type=OpType.LOAD_CSV,
+            inputs=[],
+            outputs=[new_ds_id],
+            parameters={'source_type': 'inline'}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id
+
+    # ... (Rest of your methods: _handle_compute, _handle_save, etc. are correct) ...
+    
     def _handle_compute(self, node: ComputeNode):
         new_ds_id = self._get_next_ds_id("derived")
-        
-        # 🟢 Schema Propagation
-        # 1. Start with existing columns
         new_columns = self._get_active_columns()
         
-        # 2. Update or Append the target variable
-        # Check if it already exists (mutation) or is new
         existing_idx = next((i for i, c in enumerate(new_columns) if c.name == node.target), -1)
-        
-        # For now, we assume numeric type for computed vars (can be refined later)
         new_col_def = Column(name=node.target, type=DataType.INTEGER)
+        
         if existing_idx >= 0:
             new_columns[existing_idx] = new_col_def
         else:
@@ -120,8 +149,9 @@ class GraphBuilder:
         self.active_dataset_id = new_ds_id
 
     def _handle_save(self, node: SaveNode):
-        file_ds_id = f"file_{node.filename}"
-        # Output file inherits the schema of the active dataset!
+        clean_filename = node.filename.strip("'").strip('"')
+        file_ds_id = f"file_{clean_filename}"
+        
         ds = Dataset(id=file_ds_id, source="file", columns=self._get_active_columns())
         self.datasets.append(ds)
 
@@ -130,14 +160,13 @@ class GraphBuilder:
             type=OpType.SAVE_BINARY,
             inputs=[self.active_dataset_id] if self.active_dataset_id else [],
             outputs=[file_ds_id],
-            parameters={'filename': node.filename}
+            parameters={'filename': clean_filename}
         )
         self.operations.append(op)
 
     def _handle_generic(self, node: GenericNode):
         if self.active_dataset_id:
             new_ds_id = self._get_next_ds_id("generic")
-            # Generic commands pass schema through unchanged (conservative approach)
             new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
             self.datasets.append(new_ds)
             
@@ -151,12 +180,10 @@ class GraphBuilder:
             self.operations.append(op)
             self.active_dataset_id = new_ds_id
 
-
     def _handle_filter(self, node: FilterNode):
         if not self.active_dataset_id: return
 
         new_ds_id = self._get_next_ds_id("filtered")
-        # Filter keeps same schema
         new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
         self.datasets.append(new_ds)
 
@@ -173,8 +200,6 @@ class GraphBuilder:
     def _handle_materialize(self, node: MaterializeNode):
         if not self.active_dataset_id: return
 
-        # EXECUTE is a barrier. It doesn't change schema, but forces evaluation.
-        # In our graph, we represent this as a checkpoint.
         new_ds_id = self._get_next_ds_id("materialized")
         new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
         self.datasets.append(new_ds)
@@ -189,35 +214,26 @@ class GraphBuilder:
         self.operations.append(op)
         self.active_dataset_id = new_ds_id            
 
-
     def _handle_join(self, node: JoinNode):
-        # 1. Resolve Inputs
         input_ids = []
         for src in node.sources:
             if src == "*":
                 if self.active_dataset_id:
                     input_ids.append(self.active_dataset_id)
-                else:
-                    # Edge case: * used with no active state
-                    pass 
             else:
-                # Check if we already loaded this file? 
-                # For MVP, assume it refers to a file we need to treat as a source
-                # In a real compiler, we might look up 'ds_rates.sav' if it was loaded earlier.
-                # Here we create an implicit reference.
-                file_ds_id = f"source_{src}"
-                # If not exists, register it (Simple check)
-                if not any(d.id == file_ds_id for d in self.datasets):
-                     self.datasets.append(Dataset(id=file_ds_id, source="file"))
-                input_ids.append(file_ds_id)
+                clean_src = src.strip("'").strip('"')
+                potential_internal_id = f"file_{clean_src}"
+                internal_match = next((d for d in self.datasets if d.id == potential_internal_id), None)
+                
+                if internal_match:
+                    input_ids.append(internal_match.id)
+                else:
+                    file_ds_id = f"source_{clean_src}"
+                    if not any(d.id == file_ds_id for d in self.datasets):
+                          self.datasets.append(Dataset(id=file_ds_id, source="file"))
+                    input_ids.append(file_ds_id)
 
-        # 2. Create Output Dataset
         new_ds_id = self._get_next_ds_id("joined")
-        
-        # Schema Merging Strategy (Naive):
-        # Start with columns from the first input (Left Join logic usually)
-        # In reality, MATCH FILES is a full outer join of variables on the key.
-        # We will copy the active columns for now.
         new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
         self.datasets.append(new_ds)
 
@@ -232,7 +248,6 @@ class GraphBuilder:
         self.active_dataset_id = new_ds_id
 
     def _handle_aggregate(self, node: AggregateNode):
-
         if node.outfile == "*" or node.outfile == "":
              new_ds_id = self._get_next_ds_id("agg_active")
              is_side_effect = False
@@ -240,31 +255,23 @@ class GraphBuilder:
              new_ds_id = f"source_{node.outfile}"
              is_side_effect = True
 
-        # 🟢 CALCULATE OUTPUT SCHEMA
-        # 1. Start with Break Variables (Inherit types from input if possible)
         new_cols = []
-        
-        # 🟢 FIX 1: Create lookup dict from Objects, not Tuples
         input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
+        # Using .get() here is safe now that input_ds.columns are Objects, not Tuples!
         input_schema = {c.name: c.type for c in input_ds.columns} if input_ds else {}
 
         for break_var in node.break_vars:
             dtype = input_schema.get(break_var, DataType.UNKNOWN)
-            # 🟢 FIX 2: Append Object, not Tuple
             new_cols.append(Column(name=break_var, type=dtype))
 
-        # 2. Add Aggregation Targets
         for agg_expr in node.aggregations:
             if "=" in agg_expr:
                 target = agg_expr.split("=")[0].strip()
-                # 🟢 FIX 3: Append Object, not Tuple
                 new_cols.append(Column(name=target, type=DataType.INTEGER))
 
-        # Create Dataset with calculated schema
         new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
         self.datasets.append(new_ds)
 
-        # Create Operation
         op = Operation(
             id=self._get_next_op_id("aggregate"),
             type=OpType.AGGREGATE,
@@ -281,59 +288,24 @@ class GraphBuilder:
         if not is_side_effect:
             self.active_dataset_id = new_ds_id
 
-    def _handle_data_list(self, node: DataListNode):
-        """
-        Register a new dataset created by inline data.
-        """
-        # Create a new dataset ID
-        new_ds_id = self._get_next_ds_id("inline")
-        
-        # Register it with the explicit schema
-        new_ds = Dataset(id=new_ds_id, source="inline", columns=node.columns)
-        self.datasets.append(new_ds)
-        
-        # Create a 'Load' operation for it
-        op = Operation(
-            id=self._get_next_op_id("load_inline"),
-            type=OpType.LOAD_CSV,
-            inputs=[],
-            outputs=[new_ds_id],
-            parameters={'source_type': 'inline'}
-        )
-        self.operations.append(op)
-        
-        # Set as active
-        self.active_dataset_id = new_ds_id
-
     def _handle_recode(self, node: RecodeNode):
-        # 1. Identify Input Dataset
         input_ds = next((d for d in self.datasets if d.id == self.active_dataset_id), None)
-        
-        # 2. Calculate New Schema
-        # Start with existing columns
         new_cols = list(input_ds.columns) if input_ds else []
-        
-        # Add targets if they are new
         existing_names = {c.name.upper() for c in new_cols}
         
         for target in node.target_vars:
             if target.upper() not in existing_names:
-                # 🟢 FIX 4: Append Object, not Tuple
                 new_cols.append(Column(name=target, type=DataType.UNKNOWN))
 
-        
-        # 3. Create New Dataset State
         new_ds_id = self._get_next_ds_id("recode")
         new_ds = Dataset(id=new_ds_id, source="derived", columns=new_cols)
         self.datasets.append(new_ds)
         
-        # 4. Create Operation
         self.operations.append(Operation(
             id=self._get_next_op_id("recode"),
-            type=OpType.COMPUTE_COLUMNS, # or a new OpType.RECODE
+            type=OpType.COMPUTE_COLUMNS,
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
             parameters={'logic': node.map_logic}
         ))
-        
         self.active_dataset_id = new_ds_id

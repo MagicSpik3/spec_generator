@@ -2,7 +2,7 @@ from typing import List
 from spec_generator.importers.spss.parsers.logic import LogicParserMixin
 from spec_generator.importers.spss.tokens import TokenType
 from spec_generator.importers.spss.ast import (
-    AstNode, GenericNode, LoadNode, ComputeNode, 
+    AstNode, GenericNode, IgnorableNode, LoadNode, ComputeNode, 
     FilterNode, MaterializeNode, SaveNode, JoinNode
 )
 from spec_generator.importers.spss.parsers.base import BaseParserMixin
@@ -50,6 +50,14 @@ class SpssParser(SchemaParserMixin,
                 self.advance()
             elif token.value.upper() == "RECODE":
                 nodes.append(self.parse_recode())
+            # 🟢 NEW: catch "Noise" commands so they don't break the chain
+            # 🟢 FIX: Allow IDENTIFIER type because Lexer might not know 'TITLE' is a command
+            elif (token.type == TokenType.COMMAND or token.type == TokenType.IDENTIFIER) and \
+                 any(cmd == token.value.upper() for cmd in [
+                "TITLE", "SUBTITLE", "LIST", "DESCRIPTIVES", "FREQUENCIES", 
+                "SET", "CACHE", "SHOW", "DISPLAY", "NOTE"
+            ]):
+                nodes.append(self._parse_ignorable())
 
             else:
                 nodes.append(self._parse_generic_command())
@@ -106,25 +114,6 @@ class SpssParser(SchemaParserMixin,
         self.advance(); params = self._collect_params_until_terminator()
         return SaveNode(filename=params.get('OUTFILE', params.get('/OUTFILE', 'unknown')).strip("'").strip('"'))
 
-    def _parse_match_files(self) -> JoinNode:
-        self.advance(); sources = []; by_keys = []
-        while self.current_token().type != TokenType.TERMINATOR:
-            t = self.current_token()
-            if t.type == TokenType.SUBCOMMAND:
-                if t.value.upper() == "/FILE":
-                    self.advance(); 
-                    if self.current_token().type == TokenType.EQUALS: self.advance()
-                    sources.append(self.current_token().value.strip("'").strip('"')); self.advance()
-                elif t.value.upper() == "/BY":
-                    self.advance(); 
-                    if self.current_token().type == TokenType.EQUALS: self.advance()
-                    while self.current_token().type == TokenType.IDENTIFIER:
-                        by_keys.append(self.current_token().value); self.advance()
-                else: self.advance()
-            else: self.advance()
-        self.advance()
-        return JoinNode(sources=sources, by=by_keys)
-
     def _skip_data_block(self):
         self.advance()
         while self.pos < len(self.tokens):
@@ -140,3 +129,55 @@ class SpssParser(SchemaParserMixin,
             self.advance()
         self.advance()
         return GenericNode(command=cmd)
+    
+    def _parse_match_files(self) -> JoinNode:
+        self.advance() # Skip MATCH FILES token
+        sources = []
+        by_keys = []
+        
+        while self.current_token().type != TokenType.TERMINATOR:
+            t = self.current_token()
+            
+            if t.type == TokenType.SUBCOMMAND:
+                # 🟢 FIX: Accept both /FILE and /TABLE as valid input sources
+                if t.value.upper() in ["/FILE", "/TABLE"]:
+                    self.advance() # Skip the subcommand
+                    
+                    # Skip optional equals sign
+                    if self.current_token().type == TokenType.EQUALS: 
+                        self.advance()
+                    
+                    # Extract filename and strip quotes immediately
+                    clean_source = self.current_token().value.strip("'").strip('"')
+                    sources.append(clean_source)
+                    
+                    self.advance() # Move past the filename
+                    
+                elif t.value.upper() == "/BY":
+                    self.advance()
+                    if self.current_token().type == TokenType.EQUALS: 
+                        self.advance()
+                    while self.current_token().type == TokenType.IDENTIFIER:
+                        by_keys.append(self.current_token().value)
+                        self.advance()
+                else:
+                    self.advance() # Skip unknown subcommands
+            else:
+                self.advance() # Skip unknown tokens
+                
+        self.advance() # Skip Terminator (.)
+        return JoinNode(sources=sources, by=by_keys)
+   
+    
+    def _parse_ignorable(self) -> IgnorableNode:
+        cmd = self.current_token().value
+        self.advance()
+        
+        # Consume content until terminator (optional, just for metadata)
+        content = ""
+        while self.pos < len(self.tokens) and self.current_token().type != TokenType.TERMINATOR:
+            content += self.current_token().value + " "
+            self.advance()
+        
+        self.advance() # Skip terminator
+        return IgnorableNode(command=cmd, content=content.strip())

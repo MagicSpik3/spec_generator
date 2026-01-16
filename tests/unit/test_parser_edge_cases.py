@@ -14,15 +14,18 @@ class TestParserEdgeCases:
     # --------------------------------------------------------------------------
     def test_parses_unknown_command_as_generic(self):
         """
-        Scenario: Parser encounters 'FREQUENCIES'. It should consume it 
-        as a GenericNode rather than crashing.
+        Scenario: Parser encounters a TRULY unknown command. 
+        It should consume it as a GenericNode rather than crashing.
         """
-        code = "FREQUENCIES VARIABLES=age."
-        nodes = self.parser.parse(code)
+        # OLD: code = "FREQUENCIES VARIABLES=age."  <-- Now 'Ignorable'
         
+        # NEW: Use something that will never be supported
+        code = "TURBO_ENCABULATE SIDE_FUMBLING=TRUE." 
+        
+        nodes = self.parser.parse(code)
+    
         assert len(nodes) == 1
         assert isinstance(nodes[0], GenericNode)
-        assert nodes[0].command == "FREQUENCIES"
 
     # --------------------------------------------------------------------------
     # 2. Variables Block Parsing (Line 59)

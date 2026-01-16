@@ -4,11 +4,16 @@ from etl_ir.types import DataType
 
 
 
-
-
 @dataclass
 class AstNode:
     raw_command: str = "UNKNOWN" 
+
+@dataclass
+class IgnorableNode(AstNode):
+    """Represents a command that has NO impact on the data flow (Metadata/Reporting)"""
+    # 🟢 Fix: Add default value = "" to satisfy inheritance rules
+    command: str = "UNKNOWN"
+    content: str = ""
 
 @dataclass
 class LoadNode(AstNode):
