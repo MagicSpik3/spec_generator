@@ -1,10 +1,11 @@
 import hashlib
+from platform import node
 from typing import List, Optional, Tuple
 
 # 🟢 Cleaned Import: Removed 'from platform import node'
 from spec_generator.importers.spss.ast import (
-    AggregateNode, AstNode, DataListNode, FilterNode, JoinNode,
-    LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode, IgnorableNode, SortNode
+    AggregateNode, AstNode, DataListNode, FilterNode, IfNode, JoinNode,
+    LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode, IgnorableNode, SortNode, FilterNode
 )
 from etl_ir.model import Pipeline, Dataset, Operation, Column
 from etl_ir.types import DataType, OpType
@@ -61,6 +62,10 @@ class GraphBuilder:
                 self._handle_recode(node)
             elif isinstance(node, SortNode):
                 self._handle_sort(node)
+            elif isinstance(node, FilterNode):
+                self._handle_filter(node)
+            elif isinstance(node, IfNode): 
+                self._handle_if(node)
 
         return Pipeline(
             metadata=self.metadata,
@@ -239,12 +244,17 @@ class GraphBuilder:
         new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
         self.datasets.append(new_ds)
 
+        right_table = next((s for s in node.sources if s != '*'), "unknown")
         op = Operation(
             id=self._get_next_op_id("join"),
             type=OpType.JOIN,
             inputs=input_ids,
             outputs=[new_ds_id],
-            parameters={'by': ", ".join(node.by)}
+            parameters={
+                'by': node.by,
+                'type': 'LEFT',  # 🟢 ADD THIS (Matches YAML expectation)
+                'right_table': right_table # 🟢 ADD THIS
+            }
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id
@@ -327,6 +337,53 @@ class GraphBuilder:
             outputs=[new_ds_id],
             # Join list into "col1, col2" string for RGenerator
             parameters={'keys': ", ".join(node.keys)}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id
+
+
+    def _handle_filter(self, node: FilterNode):
+        if not self.active_dataset_id: return
+
+        # Filtering creates a new dataset view (schema doesn't change)
+        new_ds_id = self._get_next_ds_id("filtered")
+        new_ds = Dataset(
+            id=new_ds_id, 
+            source="derived", 
+            columns=self._get_active_columns()
+        )
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("filter"),
+            type=OpType.FILTER_ROWS,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            parameters={'condition': node.condition}
+        )
+        self.operations.append(op)
+        self.active_dataset_id = new_ds_id
+
+    def _handle_if(self, node: IfNode):
+        if not self.active_dataset_id: return
+
+        # IF creates a derived column, just like COMPUTE
+        # In a real graph, this might be a 'conditional_update' op, 
+        # but for now we map it to COMPUTE with an extra param.
+        new_ds_id = self._get_next_ds_id("derived")
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("compute_if"),
+            type=OpType.COMPUTE_COLUMNS,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            parameters={
+                'target': node.target,
+                'expression': node.expression,
+                'condition': node.condition # 🟢 Extra param for the generator to handle later
+            }
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id

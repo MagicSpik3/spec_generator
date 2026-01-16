@@ -20,6 +20,7 @@ SPSS_TOKENS = [
     (TokenType.COMMAND, re.compile(r"EXECUTE", re.IGNORECASE)),
     (TokenType.COMMAND, re.compile(r"AGGREGATE", re.IGNORECASE)), 
     (TokenType.COMMAND, re.compile(r"SORT", re.IGNORECASE)),
+    (TokenType.COMMAND, re.compile(r"IF", re.IGNORECASE)),
     
     # 4. Subcommands
     (TokenType.SUBCOMMAND, re.compile(r"/[A-Za-z_]+")),

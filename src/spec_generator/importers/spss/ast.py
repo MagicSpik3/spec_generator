@@ -27,6 +27,17 @@ class ComputeNode(AstNode):
     expression: str = ""
 
 @dataclass
+class IfNode(AstNode):
+    # 🟢 FIX: Add defaults (= "") to satisfy inheritance rules
+    condition: str = ""
+    target: str = ""
+    expression: str = ""
+    
+@dataclass
+class FilterNode(AstNode): # 🟢 New
+    condition: str = ""
+
+@dataclass
 class FilterNode(AstNode): # 🟢 New
     condition: str = ""
 

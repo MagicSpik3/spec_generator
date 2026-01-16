@@ -1,0 +1,175 @@
+- name: "01_load_sort_save"
+  description: "Validates basic LOAD, SORT, and SAVE flow."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='a.csv' /DELIMITERS=','.
+    SORT CASES BY id.
+    SAVE OUTFILE='b.sav'.
+  expected:
+    - type: LOAD_CSV
+      params:
+        filename: "a.csv"
+        format: "TXT"
+    - type: SORT_ROWS
+      params:
+        keys: "id"
+    - type: SAVE_BINARY
+      params:
+        filename: "b.sav"
+
+- name: "02_simple_compute"
+  description: "Validates basic arithmetic expressions."
+  spss: |
+    COMPUTE x2 = x * 2.
+    EXECUTE.
+  expected:
+    # 🟢 FIX: Expect Atomic operation (Builder), not Batched (Optimizer)
+    - type: COMPUTE_COLUMNS
+      params:
+        target: "x2"
+        expression: "x * 2"
+
+- name: "03_multiple_compute"
+  description: "Validates multiple sequential computations."
+  spss: |
+    COMPUTE a = x + y.
+    COMPUTE b = a * 10.
+    EXECUTE.
+  expected:
+    - type: COMPUTE_COLUMNS
+      params:
+        target: "a"
+        expression: "x + y"
+    - type: COMPUTE_COLUMNS
+      params:
+        target: "b"
+        expression: "a * 10"
+
+- name: "04_conditional_if"
+  description: "Validates conditional column assignment."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='dummy.csv'.
+    STRING band (A10).
+    IF (income < 20000) band = "LOW".
+    EXECUTE.
+  expected:
+    - type: LOAD_CSV
+      params:
+        filename: "dummy.csv"
+        format: "TXT"
+    - type: GENERIC_TRANSFORM # We still leave STRING as generic for now
+      params:
+        command: "STRING"
+    # 🟢 UPDATE THIS:
+    - type: COMPUTE_COLUMNS
+      params:
+        target: "band"
+        expression: "'LOW'"
+        condition: "( income < 20000 )" # Note: Parser adds spaces around tokens
+
+- name: "05_filter_rows"
+  description: "Validates SELECT IF logic."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='dummy.csv'.
+    SELECT IF age >= 18.
+    EXECUTE.
+  expected:
+    - type: LOAD_CSV
+      params:
+        filename: "dummy.csv"
+        format: "TXT"
+    - type: FILTER_ROWS
+      params:
+        condition: "age >= 18"
+
+- name: "06_date_math"
+  description: "Validates complex arithmetic parsing."
+  spss: |
+    COMPUTE y = TRUNC(date_num / 10000).
+    EXECUTE.
+  expected:
+    - type: COMPUTE_COLUMNS
+      params:
+        target: "y"
+        expression: "TRUNC ( date_num / 10000 )" # Parser adds spaces around parens
+
+- name: "07_aggregate"
+  description: "Validates aggregation/groupby logic."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='dummy.csv'.
+    AGGREGATE
+      /OUTFILE=*
+      /BREAK=region
+      /N_PEOPLE = N
+      /AVG_AGE = MEAN(age).
+  expected:
+    - type: LOAD_CSV
+      params:
+        filename: "dummy.csv"
+        format: "TXT"
+    - type: AGGREGATE
+      params:
+        # Note: Parser normalization might vary, adjust if test fails on formatting
+        break: ['region']
+        aggregations: ['N_PEOPLE = N', 'AVG_AGE = MEAN ( age )']
+
+- name: "08_join_match_files"
+  description: "Validates LEFT JOIN logic via MATCH FILES."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='people.csv'.
+    MATCH FILES
+      /FILE=*
+      /TABLE='regions.sav'
+      /BY region_id.
+    EXECUTE.
+  expected:
+    - type: LOAD_CSV
+      params:
+        filename: "people.csv"
+        format: "TXT"
+    - type: JOIN
+      params:
+        type: "LEFT" # MATCH FILES /TABLE defaults to Left Join
+        by: ["region_id"]
+        right_table: "regions.sav" # This param name depends on your JoinNode implementation
+
+- name: "09_full_pipeline"
+  description: "The North Star: A realistic, multi-step pipeline."
+  spss: |
+    GET DATA /TYPE=TXT /FILE='regions.csv'.
+    SORT CASES BY region.
+    SAVE OUTFILE='tmp_regions.sav'.
+
+    GET DATA /TYPE=TXT /FILE='people.csv'.
+    MATCH FILES /FILE=* /TABLE='tmp_regions.sav' /BY region.
+    
+    COMPUTE delay = death_date - reg_date.
+    SELECT IF delay >= 0.
+    
+    AGGREGATE
+      /OUTFILE=*
+      /BREAK=region
+      /AVG_DELAY = MEAN(delay).
+      
+    SAVE OUTFILE='final.csv'.
+  expected:
+    - type: LOAD_CSV
+      params: {filename: "regions.csv", format: "TXT"}
+    - type: SORT_ROWS
+      params: {keys: "region"}
+    - type: SAVE_BINARY
+      params: {filename: "tmp_regions.sav"}
+    - type: LOAD_CSV
+      params: {filename: "people.csv", format: "TXT"}
+    - type: JOIN
+      params: 
+        type: "LEFT" 
+        by: ["region"]  # <--- 🟢 Add brackets
+        right_table: "tmp_regions.sav"
+    - type: COMPUTE_COLUMNS
+      params: {target: "delay", expression: "death_date - reg_date"}
+    - type: FILTER_ROWS
+      params: {condition: "delay >= 0"}
+    - type: AGGREGATE
+      params: {break: ['region'], aggregations: ['AVG_DELAY = MEAN ( delay )']}
+    - type: SAVE_BINARY
+      params: {filename: "final.csv"}        

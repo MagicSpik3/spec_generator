@@ -51,6 +51,8 @@ class SpssParser(SchemaParserMixin,
                 "SET", "CACHE", "SHOW", "DISPLAY", "NOTE"
             ]):
                 nodes.append(self._parse_ignorable())
+            elif token.type == TokenType.COMMAND and token.value.upper() == "IF":
+                nodes.append(self._parse_if())
 
             else:
                 nodes.append(self._parse_generic_command())

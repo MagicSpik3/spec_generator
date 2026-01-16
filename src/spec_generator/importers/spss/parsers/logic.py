@@ -1,7 +1,7 @@
 from typing import List
 from spec_generator.importers.spss.parsers.base import BaseParserMixin
 from spec_generator.importers.spss.tokens import TokenType
-from spec_generator.importers.spss.ast import RecodeNode, SortNode
+from spec_generator.importers.spss.ast import IfNode, RecodeNode, SortNode
 
 class LogicParserMixin(BaseParserMixin):
     
@@ -67,3 +67,39 @@ class LogicParserMixin(BaseParserMixin):
             
         self.advance() # Skip Terminator (.)
         return SortNode(keys=keys)
+    
+    def _parse_if(self) -> IfNode:
+        # Syntax: IF (condition) target = expression.
+        self.advance() # Skip 'IF'
+        
+        # 1. Capture everything until the assignment '='
+        # We assume the last identifier before '=' is the target.
+        pre_assignment_tokens = []
+        while self.current_token().type != TokenType.EQUALS and self.current_token().type != TokenType.TERMINATOR:
+            pre_assignment_tokens.append(self.current_token())
+            self.advance()
+            
+        if self.current_token().type != TokenType.EQUALS:
+             raise SyntaxError("Expected '=' in IF command assignment.")
+             
+        # The Target is the last token before '='
+        target_token = pre_assignment_tokens.pop()
+        if target_token.type != TokenType.IDENTIFIER:
+             raise SyntaxError(f"Expected target variable before '=', got {target_token.value}")
+        target = target_token.value
+        
+        # The Condition is everything else before the target
+        condition = " ".join([t.value for t in pre_assignment_tokens]).strip()
+        
+        # 2. Skip the Equals
+        self.advance() 
+        
+        # 3. Capture the Expression
+        expr = ""
+        while self.current_token().type != TokenType.TERMINATOR:
+            expr += self.current_token().value + " "
+            self.advance()
+            
+        self.advance() # Skip Terminator
+        
+        return IfNode(condition=condition, target=target, expression=expr.strip())
