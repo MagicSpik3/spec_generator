@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 # 🟢 Cleaned Import: Removed 'from platform import node'
 from spec_generator.importers.spss.ast import (
     AggregateNode, AstNode, DataListNode, FilterNode, JoinNode,
-    LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode, IgnorableNode
+    LoadNode, ComputeNode, MaterializeNode, RecodeNode, SaveNode, GenericNode, IgnorableNode, SortNode
 )
 from etl_ir.model import Pipeline, Dataset, Operation, Column
 from etl_ir.types import DataType, OpType
@@ -59,6 +59,8 @@ class GraphBuilder:
                 self._handle_aggregate(node)
             elif isinstance(node, RecodeNode):
                 self._handle_recode(node)
+            elif isinstance(node, SortNode):
+                self._handle_sort(node)
 
         return Pipeline(
             metadata=self.metadata,
@@ -308,4 +310,23 @@ class GraphBuilder:
             outputs=[new_ds_id],
             parameters={'logic': node.map_logic}
         ))
+        self.active_dataset_id = new_ds_id
+
+    def _handle_sort(self, node: SortNode):
+        if not self.active_dataset_id: return
+
+        new_ds_id = self._get_next_ds_id("sorted")
+        # Sorting doesn't change columns, so we inherit schema
+        new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
+        self.datasets.append(new_ds)
+
+        op = Operation(
+            id=self._get_next_op_id("sort"),
+            type=OpType.SORT_ROWS,
+            inputs=[self.active_dataset_id],
+            outputs=[new_ds_id],
+            # Join list into "col1, col2" string for RGenerator
+            parameters={'keys': ", ".join(node.keys)}
+        )
+        self.operations.append(op)
         self.active_dataset_id = new_ds_id

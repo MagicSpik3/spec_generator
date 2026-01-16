@@ -1,7 +1,7 @@
 from typing import List
 from spec_generator.importers.spss.parsers.base import BaseParserMixin
 from spec_generator.importers.spss.tokens import TokenType
-from spec_generator.importers.spss.ast import RecodeNode
+from spec_generator.importers.spss.ast import RecodeNode, SortNode
 
 class LogicParserMixin(BaseParserMixin):
     
@@ -48,3 +48,22 @@ class LogicParserMixin(BaseParserMixin):
             target_vars=target_vars,
             map_logic=" ".join(mapping_logic)
         )
+    
+    def _parse_sort(self) -> SortNode:
+        # Consumes: SORT CASES [BY] var1 var2 ...
+        self.advance() # Skip 'SORT' token
+        
+        # Skip optional keywords 'CASES' and 'BY'
+        if self.current_token().value.upper() == "CASES":
+            self.advance()
+        if self.current_token().value.upper() == "BY":
+            self.advance()
+            
+        keys = []
+        # Collect identifiers until we hit a terminator or unknown token
+        while self.current_token().type == TokenType.IDENTIFIER:
+            keys.append(self.current_token().value)
+            self.advance()
+            
+        self.advance() # Skip Terminator (.)
+        return SortNode(keys=keys)

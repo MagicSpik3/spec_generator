@@ -68,4 +68,6 @@ class RecodeNode(AstNode):
     target_vars: List[str] = field(default_factory=list)
     map_logic: str = ""    
 
-    
+@dataclass
+class SortNode(AstNode):
+    keys: List[str] = field(default_factory=list)
