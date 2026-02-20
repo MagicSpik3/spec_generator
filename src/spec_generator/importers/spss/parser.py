@@ -6,6 +6,7 @@ from spec_generator.importers.spss.ast import (
     FilterNode, MaterializeNode, SaveNode, JoinNode, SortNode
 )
 from spec_generator.importers.spss.parsers.base import BaseParserMixin
+from spec_generator.importers.spss.graph_builder import GraphBuilder
 from spec_generator.importers.spss.parsers.schema import SchemaParserMixin
 from spec_generator.importers.spss.parsers.stats import StatsParserMixin
 
@@ -13,6 +14,8 @@ class SpssParser(SchemaParserMixin,
                  StatsParserMixin, 
                  LogicParserMixin, 
                  BaseParserMixin):
+    # Known SPSS functions that should be emitted as function calls (not treated as variables)
+    FUNCTION_REGISTRY = {"LAG", "CONCAT", "MEAN", "NA_IF", "CASE_WHEN", "IF_ELSE", "PASTE", "STR_C"}
     
     def parse(self, code: str) -> List[AstNode]:
         self.tokens = self.lexer.tokenize(code)
@@ -59,6 +62,33 @@ class SpssParser(SchemaParserMixin,
         
         return nodes
 
+    # Backwards-compatible API: some older tests call `parse_string()`
+    def parse_string(self, code: str):
+        """
+        Backwards-compatible helper used by legacy unit tests.
+        Returns the builder's operations list (a lightweight topology) so tests
+        that expect an operation-oriented API continue to work.
+        """
+        nodes = self.parse(code)
+        builder = GraphBuilder(metadata={"source": "spec_parser.parse_string"})
+        pipeline = builder.build(nodes)
+
+        # Convert to legacy, test-friendly simple objects
+        from types import SimpleNamespace
+        legacy_ops = []
+        for op in pipeline.operations:
+            legacy = SimpleNamespace()
+            # op.type is an enum (OpType); tests expect uppercase string like 'LOAD_CSV'
+            legacy.type = op.type.name if hasattr(op.type, 'name') else str(op.type)
+            # Some legacy tests expect .params (not .parameters)
+            legacy.params = op.parameters if hasattr(op, 'parameters') else {}
+            legacy.id = op.id
+            legacy.inputs = op.inputs
+            legacy.outputs = op.outputs
+            legacy_ops.append(legacy)
+
+        return legacy_ops
+
     # --------------------------------------------------------------------------
     # Legacy Handlers
     # --------------------------------------------------------------------------
@@ -70,7 +100,7 @@ class SpssParser(SchemaParserMixin,
         columns = []
         if '/VARIABLES' in params:
             columns = self._parse_variables_block(params['/VARIABLES'])
-        return LoadNode(filename=filename, file_type=params.get('/TYPE', 'TXT'), columns=columns)
+        return LoadNode(filename=filename, file_type=params.get('/TYPE', 'TXT'), columns=columns, params=params)
 
     def _parse_compute(self) -> ComputeNode:
         self.advance() # Skip COMPUTE
@@ -86,11 +116,27 @@ class SpssParser(SchemaParserMixin,
              raise SyntaxError(f"Expected '=' in COMPUTE command, got {self.current_token().value}")
         self.advance() 
 
-        expr = ""
+        parts = []
         while self.current_token().type != TokenType.TERMINATOR:
-            expr += self.current_token().value + " "
+            t = self.current_token()
+            # 🟢 FIX: Preserve original token values (maintains SPSS case conventions)
+            parts.append(t.value)
             self.advance()
+
+        # Consume the terminating token (.)
         self.advance()
+        # Join tokens with spaces, then normalize
+        expr = " ".join(parts)
+        # Collapse multiple spaces to single space
+        import re
+        expr = re.sub(r'\s+', ' ', expr)
+        # Add proper spacing around parens and operators for readability
+        expr = re.sub(r'(\w)\(', r'\1 ( ', expr)   # TRUNC( -> TRUNC ( 
+        expr = re.sub(r'\((\S)', r'( \1', expr)     # (x -> ( x (ensure space after paren)
+        expr = re.sub(r'(\S)\)', r'\1 )', expr)     # x) -> x ) (ensure space before paren)
+        expr = re.sub(r'\)(\w)', r' ) \1', expr)    # )x -> ) x
+        # Clean up and normalize spaces to single space
+        expr = ' '.join(expr.split())
         return ComputeNode(target=target, expression=expr.strip())
 
     def _parse_select_if(self) -> FilterNode:
@@ -199,6 +245,22 @@ class SpssParser(SchemaParserMixin,
         while self.current_token().type == TokenType.IDENTIFIER:
             keys.append(self.current_token().value)
             self.advance()
-            
+
+        # Optional sort direction in parentheses: (D) or (A)
+        order = "ascending"
+        if self.current_token().type.name == 'LPAREN' or self.current_token().value == '(':
+            # consume '('
+            self.advance()
+            if self.current_token().type == TokenType.IDENTIFIER:
+                dir_tok = self.current_token().value.upper()
+                if dir_tok == 'D':
+                    order = 'descending'
+                elif dir_tok == 'A':
+                    order = 'ascending'
+                self.advance()
+            # consume ')'
+            if self.current_token().type.name == 'RPAREN' or self.current_token().value == ')':
+                self.advance()
+
         self.advance() # Skip Terminator (.)
-        return SortNode(keys=keys)
+        return SortNode(keys=keys, order=order)

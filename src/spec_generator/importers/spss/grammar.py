@@ -19,8 +19,17 @@ SPSS_TOKENS = [
     (TokenType.COMMAND, re.compile(r"MATCH\s+FILES", re.IGNORECASE)),
     (TokenType.COMMAND, re.compile(r"EXECUTE", re.IGNORECASE)),
     (TokenType.COMMAND, re.compile(r"AGGREGATE", re.IGNORECASE)), 
-    (TokenType.COMMAND, re.compile(r"SORT", re.IGNORECASE)),
-    (TokenType.COMMAND, re.compile(r"IF", re.IGNORECASE)),
+    (TokenType.COMMAND, re.compile(r"SORT(\s+CASES)?", re.IGNORECASE)), # Handles "SORT" or "SORT CASES"
+    (TokenType.COMMAND, re.compile(r"DO\s+IF", re.IGNORECASE)),          # <--- MISSING
+    (TokenType.COMMAND, re.compile(r"END\s+IF", re.IGNORECASE)),         # <--- MISSING
+    (TokenType.COMMAND, re.compile(r"IF", re.IGNORECASE)),                # Keep "IF" after "DO IF"
+    (TokenType.COMMAND, re.compile(r"COMPUTE", re.IGNORECASE)),           # <--- MISSING    # 3. Explicit Commands
+
+
+    # 4. Built-in Functions (NEW BLOCK - Prevents "Variable Not Found" errors)
+    # We use \b to ensure we match "LAG" but not "FLAG"
+    (TokenType.FUNCTION, re.compile(r"\b(LAG|MEAN|SUM|MIN|MAX|RTRIM|LTRIM|NUMBER|STRING|SYSMIS|MISSING|MOD|TRUNC|DATE\.MDY|DATE\.DMY)\b", re.IGNORECASE)),
+
     
     # 4. Subcommands
     (TokenType.SUBCOMMAND, re.compile(r"/[A-Za-z_]+")),

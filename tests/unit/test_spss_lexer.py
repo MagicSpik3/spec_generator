@@ -10,13 +10,16 @@ class TestSpssLexer:
     def test_basic_command_tokenization(self):
         """
         Verifies simple command splitting.
+        UPDATED: Expects COMPUTE to be a COMMAND, not an IDENTIFIER.
         """
         code = "COMPUTE x = 1."
         tokens = self.lexer.tokenize(code)
         
         assert len(tokens) == 5
-        assert tokens[0].type == TokenType.IDENTIFIER # COMPUTE (Parser promotes to CMD)
-        assert tokens[0].value == "COMPUTE"
+        # 🟢 CHANGE: We now expect the lexer to know this is a command
+        assert tokens[0].type == TokenType.COMMAND 
+        assert tokens[0].value.upper() == "COMPUTE"
+        
         assert tokens[1].type == TokenType.IDENTIFIER # x
         assert tokens[2].type == TokenType.EQUALS     # =
         assert tokens[3].type == TokenType.NUMBER_LITERAL # 1
@@ -26,13 +29,12 @@ class TestSpssLexer:
         """
         SPSS allows both single and double quotes and escaped quotes.
         """
-        # Test escaped single quote: 'data''s.sav' -> "data's.sav"
         code = "SAVE OUTFILE='data''s.sav'."
         tokens = self.lexer.tokenize(code)
         
         # [SAVE] [OUTFILE] [=] ['data''s.sav'] [.]
-        assert tokens[2].type == TokenType.EQUALS        # Index 2 is '='
-        assert tokens[3].type == TokenType.STRING_LITERAL # Index 3 is the string
+        assert tokens[2].type == TokenType.EQUALS        
+        assert tokens[3].type == TokenType.STRING_LITERAL 
         assert tokens[3].value == "'data''s.sav'"
 
     def test_handles_subcommands(self):
@@ -42,7 +44,6 @@ class TestSpssLexer:
         code = "GET DATA /TYPE=TXT."
         tokens = self.lexer.tokenize(code)
         
-        # GET (ID) DATA (ID) /TYPE (SUB) = (EQ) TXT (ID) . (TERM)
         subcommand = tokens[2]
         assert subcommand.type == TokenType.SUBCOMMAND
         assert subcommand.value == "/TYPE"
@@ -63,16 +64,50 @@ class TestSpssLexer:
         assert tokens_b[0].value == "10"
         assert tokens_b[1].type == TokenType.TERMINATOR
         
-    def test_identifiers_with_dots(self):
+    def test_identifiers_vs_functions(self):
         """
-        SPSS variable names can contain dots, e.g., 'DATE.DMY'.
-        The lexer must not break this into [DATE] [.] [DMY].
+        🟢 NEW: The 'LAG' Logic Check.
+        Ensures built-in functions are tokenized as FUNCTION, not IDENTIFIER.
         """
-        code = "COMPUTE new_date = DATE.DMY(1,1,2024)."
+        # LAG is a function, FLAG is a variable
+        code = "COMPUTE x = LAG(val) + FLAG."
         tokens = self.lexer.tokenize(code)
         
-        # DATE.DMY should be ONE token
-        # [COMPUTE] [new_date] [=] [DATE.DMY] [(] ...
+        # Tokens: [COMPUTE] [x] [=] [LAG] [(] [val] [)] [+] [FLAG] [.]
+        
+        # 1. Check LAG
+        lag_token = tokens[3]
+        assert lag_token.type == TokenType.FUNCTION, f"Expected LAG to be FUNCTION, got {lag_token.type}"
+        assert lag_token.value.upper() == "LAG"
+
+        # 2. Check FLAG (Should NOT be a function)
+        flag_token = tokens[8]
+        assert flag_token.type == TokenType.IDENTIFIER, f"Expected FLAG to be IDENTIFIER, got {flag_token.type}"
+        assert flag_token.value == "FLAG"
+
+    def test_complex_functions(self):
+        """
+        🟢 NEW: Checks RTRIM and DATE.DMY are recognized as functions.
+        """
+        code = "COMPUTE d = DATE.DMY(1,1,2022)."
+        tokens = self.lexer.tokenize(code)
+        
+        # [COMPUTE] [d] [=] [DATE.DMY] ...
         func_token = tokens[3]
-        assert func_token.type == TokenType.IDENTIFIER
-        assert func_token.value == "DATE.DMY"
+        
+        # Assuming you added DATE.DMY to the FUNCTION regex list in grammar.py
+        assert func_token.type == TokenType.FUNCTION
+        assert func_token.value.upper() == "DATE.DMY"
+
+    def test_do_if_command(self):
+        """
+        🟢 NEW: Verifies DO IF is treated as a single COMMAND token.
+        This prevents the parser bug where 'IF' logic swallowed the line.
+        """
+        code = "DO IF (x = 1)."
+        tokens = self.lexer.tokenize(code)
+        
+        # Should be [DO IF] [LPAREN] ...
+        # NOT [DO] [IF] ...
+        assert tokens[0].type == TokenType.COMMAND
+        assert tokens[0].value.upper() == "DO IF"

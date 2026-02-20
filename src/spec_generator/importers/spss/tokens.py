@@ -19,6 +19,9 @@ class TokenType(Enum):
     COMMA = auto()        # ,
     OPERATOR = auto()     # +, -, *, /, AND, OR, GT, LT, EQ
     
+    # Logic
+    FUNCTION = auto()     # LAG, MEAN, RTRIM <--- Changed to auto() for consistency
+    
     # Noise
     COMMENT = auto()      # * This is a comment
 

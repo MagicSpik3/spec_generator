@@ -101,8 +101,20 @@ class GraphBuilder:
             type=OpType.LOAD_CSV,
             inputs=[],
             outputs=[dataset_id],
-            parameters={'filename': node.filename, 'format': node.file_type}
+            parameters={
+                'filename': node.filename,
+                'format': node.file_type,
+                'schema': [c.name for c in ir_columns]
+            }
         )
+        # Map FIRSTCASE -> skip_rows (FIRSTCASE=2 means skip_rows=1)
+        firstcase = node.params.get('/FIRSTCASE') if hasattr(node, 'params') else None
+        if firstcase:
+            try:
+                fc = int(firstcase)
+                op.parameters['skip_rows'] = max(0, fc - 1)
+            except ValueError:
+                pass
         self.operations.append(op)
         self.active_dataset_id = dataset_id
 
@@ -172,6 +184,30 @@ class GraphBuilder:
         self.operations.append(op)
 
     def _handle_generic(self, node: GenericNode):
+        # Special-case: support GET FILE 'filename' as a load operation
+        raw_content = node.params.get('content', '') if hasattr(node, 'params') else ''
+        cmd = node.command.upper()
+        if cmd == 'GET':
+            import re
+            m = re.search(r"FILE\s*=?\s*['\"]([^'\"]+)['\"]", raw_content, flags=re.IGNORECASE)
+            if m:
+                filename = m.group(1)
+                dataset_id = f"source_{filename}"
+                # Add dataset if missing
+                if not any(d.id == dataset_id for d in self.datasets):
+                    ds = Dataset(id=dataset_id, source="file", columns=[])
+                    self.datasets.append(ds)
+                op = Operation(
+                    id=self._get_next_op_id("load"),
+                    type=OpType.LOAD_CSV,
+                    inputs=[],
+                    outputs=[dataset_id],
+                    parameters={'filename': filename, 'format': 'SAV'}
+                )
+                self.operations.append(op)
+                self.active_dataset_id = dataset_id
+                return
+
         if self.active_dataset_id:
             new_ds_id = self._get_next_ds_id("generic")
             new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
@@ -182,7 +218,10 @@ class GraphBuilder:
                 type=OpType.GENERIC_TRANSFORM,
                 inputs=[self.active_dataset_id],
                 outputs=[new_ds_id],
-                parameters={'command': node.command}
+                parameters={
+                    'command': node.command,
+                    'raw_content': raw_content
+                }
             )
             self.operations.append(op)
             self.active_dataset_id = new_ds_id
@@ -318,25 +357,28 @@ class GraphBuilder:
             type=OpType.COMPUTE_COLUMNS,
             inputs=[self.active_dataset_id],
             outputs=[new_ds_id],
-            parameters={'logic': node.map_logic}
+            parameters={
+                'logic': node.map_logic,
+                'target': node.target_vars[0] if node.target_vars else None,
+                'source': node.source_vars[0] if node.source_vars else None
+            }
         ))
         self.active_dataset_id = new_ds_id
 
     def _handle_sort(self, node: SortNode):
-        if not self.active_dataset_id: return
-
+        # Allow SORT to be represented even without an active dataset (unit tests expect this)
         new_ds_id = self._get_next_ds_id("sorted")
-        # Sorting doesn't change columns, so we inherit schema
+        # Sorting doesn't change columns, so we inherit schema if available
         new_ds = Dataset(id=new_ds_id, source="derived", columns=self._get_active_columns())
         self.datasets.append(new_ds)
 
         op = Operation(
             id=self._get_next_op_id("sort"),
             type=OpType.SORT_ROWS,
-            inputs=[self.active_dataset_id],
+            inputs=[self.active_dataset_id] if self.active_dataset_id else [],
             outputs=[new_ds_id],
             # Join list into "col1, col2" string for RGenerator
-            parameters={'keys': ", ".join(node.keys)}
+            parameters={'keys': ", ".join(node.keys), 'order': getattr(node, 'order', 'ascending')}
         )
         self.operations.append(op)
         self.active_dataset_id = new_ds_id

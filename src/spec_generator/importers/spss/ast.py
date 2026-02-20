@@ -20,6 +20,7 @@ class LoadNode(AstNode):
     filename: str = ""
     file_type: str = "TXT"
     columns: List[Tuple[str, DataType]] = field(default_factory=list)
+    params: Dict[str, str] = field(default_factory=dict)
 
 @dataclass
 class ComputeNode(AstNode):
@@ -82,3 +83,4 @@ class RecodeNode(AstNode):
 @dataclass
 class SortNode(AstNode):
     keys: List[str] = field(default_factory=list)
+    order: str = "ascending"

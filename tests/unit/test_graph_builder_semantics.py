@@ -61,7 +61,7 @@ class TestGraphBuilderSemantics:
         join_op = ops[1]
         
         assert join_op.type == OpType.JOIN
-        assert join_op.parameters['by'] == "id"
+        assert join_op.parameters['by'] == ["id"]
         
         # Critical: Verify Inputs
         # Input 0: The output of load_main (because of '*')

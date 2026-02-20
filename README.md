@@ -204,3 +204,40 @@ src/
 
 ---
 
+## SPSS Supported in PSPP:
+Below is a practical, engineering-grade plan that works on Linux.
+
+---
+
+# 1. What will work vs what will break in PSPP
+
+### Works well in PSPP
+
+* `GET FILE`
+* `GET DATA /TYPE=TXT`
+* `SORT CASES`
+* `SELECT IF`
+* `COMPUTE`
+* `RECODE`
+* `AGGREGATE`
+* `MATCH FILES`
+* `DO IF / END IF`
+* `LAG()`
+* `STRING`
+* `FORMATS`
+* `VALUE LABELS`
+* `VARIABLE LABELS`
+* `SAVE OUTFILE`
+* `EXECUTE`
+
+### Will NOT work or needs change
+
+| Feature                                       | Status    | Fix                         |
+| --------------------------------------------- | --------- | --------------------------- |
+| `INSERT FILE`                                 | ❌ partial | Inline files manually       |
+| SPSS Macros (`!year`, `!month`, `!currmonth`) | ❌         | Replace with literal values |
+| `.xlsx` via `SAVE TRANSLATE /TYPE=XLS`        | ❌         | Use CSV                     |
+| UNC paths (`\\nsdata1\...`)                   | ❌         | Use Linux paths             |
+| Some `/MAP /VERSION` options                  | ❌         | Remove                      |
+
+---
