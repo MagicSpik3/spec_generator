@@ -72,34 +72,47 @@ class LogicParserMixin(BaseParserMixin):
         # Syntax: IF (condition) target = expression.
         self.advance() # Skip 'IF'
         
-        # 1. Capture everything until the assignment '='
-        # We assume the last identifier before '=' is the target.
-        pre_assignment_tokens = []
-        while self.current_token().type != TokenType.EQUALS and self.current_token().type != TokenType.TERMINATOR:
-            pre_assignment_tokens.append(self.current_token())
-            self.advance()
+        # 🟢 FIX: Properly handle conditions with assignment operators inside parens
+        # Step 1: Extract the parenthesized condition (handles IF (x = y) z = expr)
+        condition_tokens = []
+        if self.current_token().value == '(':
+            self.advance()  # Skip opening paren
+            paren_depth = 1
+            while paren_depth > 0 and self.current_token().type != TokenType.TERMINATOR:
+                if self.current_token().value == '(':
+                    paren_depth += 1
+                elif self.current_token().value == ')':
+                    paren_depth -= 1
+                    if paren_depth == 0:
+                        break  # Don't include closing paren
+                condition_tokens.append(self.current_token())
+                self.advance()
             
+            if self.current_token().value != ')':
+                raise SyntaxError("Expected ')' after IF condition")
+            self.advance()  # Skip closing paren
+            condition = " ".join([t.value for t in condition_tokens]).strip()
+        else:
+            raise SyntaxError("Expected '(' after IF keyword")
+        
+        # Step 2: Extract the target variable (next identifier after closing paren)
+        if self.current_token().type != TokenType.IDENTIFIER:
+            raise SyntaxError(f"Expected target variable after IF condition, got {self.current_token().value}")
+        target = self.current_token().value
+        self.advance()
+        
+        # Step 3: Expect '=' assignment operator
         if self.current_token().type != TokenType.EQUALS:
-             raise SyntaxError("Expected '=' in IF command assignment.")
-             
-        # The Target is the last token before '='
-        target_token = pre_assignment_tokens.pop()
-        if target_token.type != TokenType.IDENTIFIER:
-             raise SyntaxError(f"Expected target variable before '=', got {target_token.value}")
-        target = target_token.value
+            raise SyntaxError(f"Expected '=' in IF assignment, got {self.current_token().value}")
+        self.advance()
         
-        # The Condition is everything else before the target
-        condition = " ".join([t.value for t in pre_assignment_tokens]).strip()
-        
-        # 2. Skip the Equals
-        self.advance() 
-        
-        # 3. Capture the Expression
-        expr = ""
+        # Step 4: Capture the expression until terminator
+        expr_tokens = []
         while self.current_token().type != TokenType.TERMINATOR:
-            expr += self.current_token().value + " "
+            expr_tokens.append(self.current_token().value)
             self.advance()
-            
-        self.advance() # Skip Terminator
         
-        return IfNode(condition=condition, target=target, expression=expr.strip())
+        expr = " ".join(expr_tokens).strip()
+        self.advance()  # Skip terminator
+        
+        return IfNode(condition=condition, target=target, expression=expr)
